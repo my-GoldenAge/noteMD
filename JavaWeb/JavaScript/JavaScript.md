@@ -1,7 +1,3 @@
-[toc]
-
-
-
 # JavaScript
 
 ## 1、JavaScript 介绍 

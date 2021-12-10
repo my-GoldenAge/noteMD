@@ -1,5 +1,3 @@
-[toc]
-
 ## Mybatis-Plus(整合SpringBoot)
 
 ### 特性

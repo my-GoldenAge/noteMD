@@ -1,5 +1,3 @@
-[toc]
-
 # Java语言概述
 
 - 是**SUN**(Stanford University Network，斯坦福大学网络公司) **1995年**推出的一门高级编程语言。

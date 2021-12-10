@@ -1,5 +1,3 @@
-[toc]
-
 # 回顾什么是Spring
 
 Spring是一个开源框架，2003 年兴起的一个轻量级的Java 开发框架，作者：Rod Johnson  。

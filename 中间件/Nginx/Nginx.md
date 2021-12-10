@@ -1,5 +1,3 @@
-[toc]
-
 # 1、Nginx简介
 
 <img src="Nginx.assets/format,f_auto.png" alt="img" style="zoom: 33%;" />

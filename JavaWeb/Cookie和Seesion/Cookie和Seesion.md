@@ -1,5 +1,3 @@
-[toc]
-
 # Cookie饼干
 
 ## 1、什么是 Cookie? 
