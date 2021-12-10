@@ -205,7 +205,7 @@ git commit -m "日志信息" 文件名
 
 ## 3.7 查看历史版本
 
-```
+```shell
 git reflog 查看版本信息
 git log 查看版本详细信息
 ```
