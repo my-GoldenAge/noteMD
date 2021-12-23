@@ -1,6 +1,6 @@
 # 一. NIO 基础
 
-non-blocking io 非阻塞 IO
+**N**on-blocking **IO** 非阻塞 IO
 
 ## 1. 三大组件
 
@@ -61,10 +61,6 @@ end
 
 
 
-
-
-
-
 #### 线程池版设计
 
 ```mermaid
@@ -84,15 +80,9 @@ end
 
 
 
-
-
-
-
-
-
 #### selector 版设计
 
-selector 的作用就是配合一个线程来管理多个 channel，获取这些 channel 上发生的事件，这些 channel 工作在非阻塞模式下，不会让线程吊死在一个 channel 上。适合连接数特别多，但流量低的场景（low traffic）
+selector 的作用就是配合一个线程来管理多个 channel，获取这些 channel 上发生的事件，**这些 channel 工作在==非阻塞模式==下，不会让线程吊死在一个 channel 上。**适合连接数特别多，但流量低的场景（low traffic）
 
 ```mermaid
 graph TD
@@ -108,44 +98,74 @@ end
 
 调用 selector 的 select() 会阻塞直到 channel 发生了读写就绪事件，这些事件发生，select 方法就会返回这些事件交给 thread 来处理
 
-
-
-
+（单线程，多路IO复用）
 
 
 
 ## 2. ByteBuffer
 
-有一普通文本文件 data.txt，内容为
+pom.xml配置
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-all</artifactId>
+        <version>4.1.72.Final</version>
+    </dependency>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <version>1.18.22</version>
+    </dependency>
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>1.7.32</version>
+    </dependency>
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.2.9</version>
+        <scope>test</scope>
+    </dependency>
+
+</dependencies>
+```
+
+有一普通文本文件 test.txt，内容为
 
 ```
-1234567890abcd
+0123456789abc
 ```
 
 使用 FileChannel 来读取文件内容
 
 ```java
+/**
+ * @Author Maybe
+ * Date on 2021/12/23  15:04
+ */
 @Slf4j
-public class ChannelDemo1 {
+public class TestByteBuffer {
     public static void main(String[] args) {
-        try (RandomAccessFile file = new RandomAccessFile("helloword/data.txt", "rw")) {
-            FileChannel channel = file.getChannel();
-            ByteBuffer buffer = ByteBuffer.allocate(10);
-            do {
-                // 向 buffer 写入
-                int len = channel.read(buffer);
-                log.debug("读到字节数：{}", len);
-                if (len == -1) {
+        try (FileChannel channel = new FileInputStream("test.txt").getChannel()) {
+            //创建一个10字节大小的缓冲区，创建出来是写模式
+            ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+            while (true) {
+                //向byteBuffer缓冲区写入数据
+                int read = channel.read(byteBuffer);//返回值表示channel读到的字节数，-1表示读完了
+                if (read == -1) {
                     break;
                 }
-                // 切换 buffer 读模式
-                buffer.flip();
-                while(buffer.hasRemaining()) {
-                    log.debug("{}", (char)buffer.get());
+                //将byteBuffer切换为读模式
+                byteBuffer.flip();
+                while (byteBuffer.hasRemaining()) {
+                    log.debug("{}", (char) byteBuffer.get());
                 }
-                // 切换 buffer 写模式
-                buffer.clear();
-            } while (true);
+                //别忘了再将byteBuffer缓冲区切换为写模式进行下一轮循环
+                byteBuffer.clear();
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -156,31 +176,27 @@ public class ChannelDemo1 {
 输出
 
 ```
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 读到字节数：10
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 1
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 2
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 3
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 4
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 5
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 6
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 7
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 8
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 9
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 0
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 读到字节数：4
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - a
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - b
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - c
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - d
-10:39:03 [DEBUG] [main] c.i.n.ChannelDemo1 - 读到字节数：-1
+15:49:43.492 [main] DEBUG com.eagle.TestByteBuffer - 0
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 1
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 2
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 3
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 4
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 5
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 6
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 7
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 8
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - 9
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - a
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - b
+15:49:43.495 [main] DEBUG com.eagle.TestByteBuffer - c
 ```
 
 
 
 ### 2.1  ByteBuffer 正确使用姿势
 
-1. 向 buffer 写入数据，例如调用 channel.read(buffer)
-2. 调用 flip() 切换至**读模式**
+1. 向 buffer 写入数据，例如调用 channel.read(buffer)，buffer创建出来是写模式
+2. 等写满了需要调用 buffer.flip() 切换至**读模式**
 3. 从 buffer 读取数据，例如调用 buffer.get()
 4. 调用 clear() 或 compact() 切换至**写模式**
 5. 重复 1~4 步骤
@@ -403,7 +419,23 @@ public class ByteBufferUtil {
 可以使用 allocate 方法为 ByteBuffer 分配空间，其它 buffer 类也有该方法
 
 ```java
-Bytebuffer buf = ByteBuffer.allocate(16);
+/**
+ * @Author Maybe
+ * Date on 2021/12/23  16:36
+ */
+
+public class TestByteBufferAllocate {
+    public static void main(String[] args) {
+        System.out.println(ByteBuffer.allocate(16).getClass());//class java.nio.HeapByteBuffer
+        System.out.println(ByteBuffer.allocateDirect(16).getClass());//class java.nio.DirectByteBuffer
+        /*
+        class java.nio.HeapByteBuffer
+            java堆内存，读写效率较低，受到垃圾回收机制(GC)的影响
+        class java.nio.DirectByteBuffer
+            直接内存，读写效率高(少一次拷贝) ，不会受GC影响，分配的效率低(需要调用操作系统的API)
+         */
+    }
+}
 ```
 
 
@@ -444,16 +476,16 @@ int writeBytes = channel.write(buf);
 byte b = buf.get();
 ```
 
-get 方法会让 position 读指针向后走，如果想重复读取数据
+get 方法会让 position 读指针向后走，如果想**重复读取数据**
 
 * 可以调用 rewind 方法将 position 重新置为 0
-* 或者调用 get(int i) 方法获取索引 i 的内容，它不会移动读指针
+* 或者调用 get(int i) 方法获取索引 i 的内容，它**不会移动读指针**
 
 
 
 #### mark 和 reset
 
-mark 是在读取时，做一个标记，即使 position 改变，只要调用 reset 就能回到 mark 的位置
+mark 是在读取时，做一个标记（记录当前position的位置），即使 position 改变，只要调用 reset 就能回到 mark 的位置
 
 > **注意**
 >
@@ -464,32 +496,72 @@ mark 是在读取时，做一个标记，即使 position 改变，只要调用 r
 #### 字符串与 ByteBuffer 互转
 
 ```java
-ByteBuffer buffer1 = StandardCharsets.UTF_8.encode("你好");
-ByteBuffer buffer2 = Charset.forName("utf-8").encode("你好");
+/**
+ * @Author Maybe
+ * Date on 2021/12/23  17:26
+ */
 
-debug(buffer1);
-debug(buffer2);
+public class TestByteBufferString {
+    public static void main(String[] args) {
+        //1、字符串转为ByteBuffer
+        //1.1
+        ByteBuffer byteBuffer1 = ByteBuffer.allocate(16);
+        byteBuffer1.put("hello".getBytes(StandardCharsets.UTF_8));
+        debugAll(byteBuffer1);
+        //可以看到byteBuffer1仍为写模式
 
-CharBuffer buffer3 = StandardCharsets.UTF_8.decode(buffer1);
-System.out.println(buffer3.getClass());
-System.out.println(buffer3.toString());
+        //1.2 Charset
+        ByteBuffer byteBuffer2 = StandardCharsets.UTF_8.encode("hello");
+        debugAll(byteBuffer2);
+        //可以看到byteBuffer2已经转变为读模式
+
+        //1.3 wrap(包装)
+        ByteBuffer byteBuffer3 = ByteBuffer.wrap("hello".getBytes(StandardCharsets.UTF_8));
+        debugAll(byteBuffer3);
+        //可以看到byteBuffer3也已经转变为读模式
+
+        //2、ByteBuffer转为字符串 decode()方法
+        //2.1 针对上面buffer已经转为读模式的1.2和1.3
+        String str1 = StandardCharsets.UTF_8.decode(byteBuffer2).toString();
+        System.out.println(str1);
+        String str2 = StandardCharsets.UTF_8.decode(byteBuffer3).toString();
+        System.out.println(str2);
+
+        //2.2 上面的1.1则需要先转换为读模式
+        byteBuffer1.flip();
+        String str3 = StandardCharsets.UTF_8.decode(byteBuffer1).toString();
+        System.out.println(str3);
+    }
+}
 ```
 
 输出
 
 ```
++--------+-------------------- all ------------------------+----------------+
+position: [5], limit: [16]
          +-------------------------------------------------+
          |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
 +--------+-------------------------------------------------+----------------+
-|00000000| e4 bd a0 e5 a5 bd                               |......          |
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
 +--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
          +-------------------------------------------------+
          |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
 +--------+-------------------------------------------------+----------------+
-|00000000| e4 bd a0 e5 a5 bd                               |......          |
+|00000000| 68 65 6c 6c 6f                                  |hello           |
 +--------+-------------------------------------------------+----------------+
-class java.nio.HeapCharBuffer
-你好
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f                                  |hello           |
++--------+-------------------------------------------------+----------------+
+hello
+hello
+hello
 ```
 
 
@@ -594,7 +666,7 @@ try (RandomAccessFile file = new RandomAccessFile("helloword/3parts.txt", "rw"))
 onetwothreefourfive
 ```
 
-
+**Scattering Reads和Gathering Writes主要可以减少数据的拷贝次数**
 
 ### 2.6 练习
 
