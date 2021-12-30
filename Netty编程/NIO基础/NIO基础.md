@@ -219,27 +219,27 @@ ByteBuffer 有以下重要属性
 
 一开始
 
-![](img(NIO基础)/0021.png)
+ <img src="img(NIO基础)/0021.png" style="zoom:80%;" />
 
 写模式下，position 是写入位置，limit 等于容量，下图表示写入了 4 个字节后的状态
 
-![](img(NIO基础)/0018.png)
+ <img src="img(NIO基础)/0018.png" style="zoom:80%;" />
 
 flip 动作发生后，position 切换为读取位置，limit 切换为读取限制
 
-![](img(NIO基础)/0019.png)
+ <img src="img(NIO基础)/0019.png" style="zoom:80%;" />
 
 读取 4 个字节后，状态
 
-![](img(NIO基础)/0020.png)
+ <img src="img(NIO基础)/0020.png" style="zoom:80%;" />
 
 clear 动作发生后，状态
 
-![](img(NIO基础)/0021-16402543351363.png)
+ <img src="img(NIO基础)/0021-16402543351363.png" style="zoom:80%;" />
 
 compact 方法，是把未读完的部分向前压缩，然后切换至写模式
 
-![](img(NIO基础)/0022.png)
+ <img src="img(NIO基础)/0022.png" style="zoom:80%;" />
 
 
 
@@ -580,13 +580,13 @@ hello
 
 ### 2.4 Scattering Reads
 
-分散读取，有一个文本文件 3parts.txt
+**分散读取**，有一个文本文件 3parts.txt
 
 ```
 onetwothree
 ```
 
-使用如下方式读取，可以将数据填充至多个 buffer
+使用如下方式读取，可以将数据填充至多个 buffer，利用**channel的read方法的ByteBuffer数组的重载版本**
 
 ```java
 try (RandomAccessFile file = new RandomAccessFile("helloword/3parts.txt", "rw")) {
@@ -630,46 +630,38 @@ try (RandomAccessFile file = new RandomAccessFile("helloword/3parts.txt", "rw"))
 
 ### 2.5 Gathering Writes
 
-使用如下方式写入，可以将多个 buffer 的数据填充至 channel
+**集中写入**
+
+使用如下方式写入，可以将多个 buffer 的数据填充至 channel，利用**channel的write方法的ByteBuffer数组的重载版本**
 
 ```java
-try (RandomAccessFile file = new RandomAccessFile("helloword/3parts.txt", "rw")) {
-    FileChannel channel = file.getChannel();
-    ByteBuffer d = ByteBuffer.allocate(4);
-    ByteBuffer e = ByteBuffer.allocate(4);
-    channel.position(11);
+/**
+ * @Author Maybe
+ * Date on 2021/12/30  17:54
+ */
 
-    d.put(new byte[]{'f', 'o', 'u', 'r'});
-    e.put(new byte[]{'f', 'i', 'v', 'e'});
-    d.flip();
-    e.flip();
-    debug(d);
-    debug(e);
-    channel.write(new ByteBuffer[]{d, e});
-} catch (IOException e) {
-    e.printStackTrace();
+public class TestGatheringWrite {
+    public static void main(String[] args) throws FileNotFoundException {
+        ByteBuffer b1 = StandardCharsets.UTF_8.encode("hello");
+        ByteBuffer b2 = StandardCharsets.UTF_8.encode("world");
+        ByteBuffer b3 = StandardCharsets.UTF_8.encode("你好");
+
+        try (FileChannel channel = new RandomAccessFile("test2.txt", "rw").getChannel()) {
+            channel.write(new ByteBuffer[]{b1, b2, b3});
+        } catch (IOException e) {
+        }
+    }
 }
 ```
 
-输出
+多出一个文件：
 
-```
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 66 6f 75 72                                     |four            |
-+--------+-------------------------------------------------+----------------+
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 66 69 76 65                                     |five            |
-+--------+-------------------------------------------------+----------------+
-```
+ <img src="img(NIO基础)/image-20211230180233088.png" alt="image-20211230180233088" style="zoom:80%;" />
 
 文件内容
 
 ```
-onetwothreefourfive
+helloworld你好
 ```
 
 **Scattering Reads和Gathering Writes主要可以减少数据的拷贝次数**
