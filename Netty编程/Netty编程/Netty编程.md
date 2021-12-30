@@ -15,7 +15,7 @@ Netty 是一个异步的、基于事件驱动的网络应用框架，用于快�
 
 ### 1.2 Netty 的作者
 
-![](img/0005.png)
+<img src="img/0005.png" style="zoom:80%;" />
 
 他还是另一个著名网络应用框架 Mina 的重要贡献者
 
@@ -107,7 +107,7 @@ new ServerBootstrap()
 
 * 2 处，选择服务 Scoket 实现类，其中 NioServerSocketChannel 表示基于 NIO 的服务器端实现，其它实现还有
 
-  ![](img/0006.png)
+  <img src="img/0006.png" style="zoom:80%;" />
 
 * 3 处，为啥方法叫 childHandler，是接下来添加的处理器都是给 SocketChannel 用的，而不是给 ServerSocketChannel。ChannelInitializer 处理器（仅执行一次），它的作用是待客户端 SocketChannel 建立连接后，执行 initChannel 以便添加更多的处理器
 
@@ -143,7 +143,7 @@ new Bootstrap()
 
 * 2 处，选择客户 Socket 实现类，NioSocketChannel 表示基于 NIO 的客户端实现，其它实现还有
 
-  ![](img/0007.png)
+  <img src="img/0007.png" style="zoom:80%;" />
 
 * 3 处，添加 SocketChannel 的处理器，ChannelInitializer 处理器（仅执行一次），它的作用是待客户端 SocketChannel 建立连接后，执行 initChannel 以便添加更多的处理器
 
@@ -163,7 +163,7 @@ new Bootstrap()
 
 ### 2.4 流程梳理
 
-![](img/0040.png)
+<img src="img/0040.png" style="zoom:80%;" />
 
 #### 💡 提示
 
@@ -311,7 +311,7 @@ public static void main(String[] args) throws InterruptedException {
 
 可以看到两个工人轮流处理 channel，但工人与 channel 之间进行了绑定
 
-![](img/0042.png)
+<img src="img/0042.png" style="zoom:80%;" />
 
 
 
@@ -407,7 +407,7 @@ new ServerBootstrap()
 
 
 
-![](img/0041.png)
+<img src="img/0041.png" style="zoom:80%;" />
 
 
 
@@ -661,19 +661,19 @@ public class CloseFutureClient {
 
 思考下面的场景，4 个医生给人看病，每个病人花费 20 分钟，而且医生看病的过程中是以病人为单位的，一个病人看完了，才能看下一个病人。假设病人源源不断地来，可以计算一下 4 个医生一天工作 8 小时，处理的病人总数是：`4 * 8 * 3 = 96`
 
-![](img/0044.png)
+<img src="img/0044.png" style="zoom:80%;" />
 
 
 
 经研究发现，看病可以细分为四个步骤，经拆分后每个步骤需要 5 分钟，如下
 
-![](img/0048.png)
+<img src="img/0048.png" style="zoom:80%;" />
 
 
 
 因此可以做如下优化，只有一开始，医生 2、3、4 分别要等待 5、10、15 分钟才能执行工作，但只要后续病人源源不断地来，他们就能够满负荷工作，并且处理病人的能力提高到了 `4 * 8 * 12` 效率几乎是原来的四倍
 
-![](img/0047.png)
+<img src="img/0047.png" style="zoom:80%;" />
 
 要点
 
@@ -1053,7 +1053,7 @@ new Bootstrap()
 
 可以看到，ChannelInboundHandlerAdapter 是按照 addLast 的顺序执行的，而 ChannelOutboundHandlerAdapter 是按照 addLast 的逆序执行的。ChannelPipeline 的实现是一个 ChannelHandlerContext（包装了 ChannelHandler） 组成的双向链表
 
-![](img/0008.png)
+<img src="img/0008.png" style="zoom:80%;" />
 
 * 入站处理器中，ctx.fireChannelRead(msg) 是 **调用下一个入站处理器**
   * 如果注释掉 1 处代码，则仅会打印 1
@@ -1073,7 +1073,7 @@ new Bootstrap()
 
 图1 - 服务端 pipeline 触发的原始流程，图中数字代表了处理步骤的先后次序
 
-![](img/0009.png)
+<img src="img/0009.png" style="zoom:80%;" />
 
 
 
@@ -1156,7 +1156,7 @@ ByteBuf buffer = ByteBufAllocator.DEFAULT.directBuffer(10);
 
 ByteBuf 由四部分组成
 
-![](img/0010.png)
+<img src="img/0010.png" style="zoom:80%;" />
 
 最开始读写指针都在 0 位置
 
@@ -1419,7 +1419,7 @@ public static boolean release(Object msg) {
 
 【零拷贝】的体现之一，对原始 ByteBuf 进行切片成多个 ByteBuf，切片后的 ByteBuf 并没有发生内存复制，还是使用原始 ByteBuf 的内存，切片后的 ByteBuf 维护独立的 read，write 指针
 
-![](img/0011.png)
+<img src="img(Netty编程)/0011.png" style="zoom:80%;" />
 
 例，原始 ByteBuf 进行一些初始操作
 
@@ -1530,7 +1530,7 @@ System.out.println(ByteBufUtil.prettyHexDump(origin));
 
 【零拷贝】的体现之一，就好比截取了原始 ByteBuf 所有内容，并且没有 max capacity 的限制，也是与原始 ByteBuf 使用同一块底层内存，只是读写指针是独立的
 
-![](img/0012.png)
+<img src="img/0012.png" style="zoom:80%;" />
 
 
 
@@ -2047,13 +2047,13 @@ serverBootstrap.option(ChannelOption.SO_RCVBUF, 10);
 >
 > * TCP 以一个段（segment）为单位，每发送一个段就需要进行一次确认应答（ack）处理，但如果这么做，缺点是包的往返时间越长性能就越差
 >
->   ![](img/0049.png)
+>   <img src="img(Netty编程)/0049.png" style="zoom:80%;" />
 >
 > 
 >
 > * 为了解决此问题，引入了窗口概念，窗口大小即决定了无需等待应答而可以继续发送的数据最大值
 >
->   ![](img/0051.png)
+>   <img src="img/0051.png" style="zoom:80%;" />
 >
 > * 窗口实际就起到一个缓冲区的作用，同时也能起到流量控制的作用
 >
@@ -2078,7 +2078,7 @@ serverBootstrap.option(ChannelOption.SO_RCVBUF, 10);
 >   * TCP 在传递大量数据时，会按照 MSS 大小将数据进行分割发送
 >   * MSS 的值在三次握手时通知对方自己 MSS 的值，然后在两者之间选择一个小值作为 MSS
 >
->   <img src="img/0031.jpg" style="zoom:50%;" />
+>   <img src="img(Netty编程)/0031.jpg" style="zoom:50%;" />
 
 
 
@@ -2909,7 +2909,7 @@ channel.writeInbound(s2);
 
 解读
 
-![](img/0013.png)
+<img src="img(Netty编程)/0013.png" style="zoom:80%;" />
 
 
 
@@ -3844,6 +3844,8 @@ Note right of s : ESTABLISHED
 aq -->> s : 
 s ->> s : accept()
 ```
+
+<img src="img(Netty编程)/image-20211230172154314.png" alt="image-20211230172154314" style="zoom:80%;" />
 
 1. 第一次握手，client 发送 SYN 到 server，状态修改为 SYN_SEND，server 收到，状态改变为 SYN_REVD，并将该请求放入 sync queue 队列
 2. 第二次握手，server 回复 SYN + ACK 给 client，client 收到，状态改变为 ESTABLISHED，并发送 ACK 给 server
@@ -4948,7 +4950,7 @@ protected void run() {
 
 参考下图
 
-<img src="img/0032.png"  />
+<img src="img(Netty编程)/0032.png"  />
 
 
 
