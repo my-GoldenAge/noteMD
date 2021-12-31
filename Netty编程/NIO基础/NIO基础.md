@@ -57,7 +57,7 @@ end
 
 <img src="img(NIO基础)/image-20211223221355813.png" alt="image-20211223221355813" style="zoom:80%;" />
 
-#### ⚠️ 多线程版缺点
+⚠️ **多线程版缺点**
 
 * 内存占用高
 * 线程上下文切换成本高
@@ -79,7 +79,7 @@ end
 
 <img src="img(NIO基础)/image-20211223221414781.png" alt="image-20211223221414781" style="zoom:80%;" />
 
-#### ⚠️ 线程池版缺点
+⚠️ **线程池版缺点**
 
 * 阻塞模式下，线程仅能处理一个 socket 连接
 * 仅适合短连接场景
@@ -841,29 +841,37 @@ channel.position(newPos);
 ### 3.2 两个 Channel 传输数据
 
 ```java
-String FROM = "helloword/data.txt";
-String TO = "helloword/to.txt";
-long start = System.nanoTime();
-try (FileChannel from = new FileInputStream(FROM).getChannel();
-     FileChannel to = new FileOutputStream(TO).getChannel();
-    ) {
-    from.transferTo(0, from.size(), to);
-} catch (IOException e) {
-    e.printStackTrace();
+/**
+ * @Author Maybe
+ * Date on 2021/12/31  15:25
+ */
+//效事高，底层会利用操作系统的零拷贝进行优化,
+public class TestFileChannelTransferTo {
+    public static void main(String[] args) {
+        long start = System.nanoTime();
+        //TWR可以写多个资源，中间用;隔开
+        try (FileChannel from = new RandomAccessFile("test.txt", "rw").getChannel();
+             FileChannel to = new RandomAccessFile("to.txt", "rw").getChannel()) {
+            //from.transferTo(从什么位置开始复制, 复制的长度, 复制到哪)
+            from.transferTo(0, from.size(), to);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        long end = System.nanoTime();
+        System.out.println("transferTo 用时：" + (end - start) / 1000_000.0);
+    }
 }
-long end = System.nanoTime();
-System.out.println("transferTo 用时：" + (end - start) / 1000_000.0);
 ```
 
 输出
 
 ```
-transferTo 用时：8.2011
+transferTo 用时：11.1665
 ```
 
+ <img src="img(NIO基础)/image-20211231153310703.png" alt="image-20211231153310703" style="zoom:80%;" />
 
-
-超过 2g 大小的文件传输
+**虽然效率高，但一次最多只能传输2g的数据**，超过 2g 大小的文件传输：
 
 ```java
 public class TestFileChannelTransferTo {
@@ -946,7 +954,7 @@ d:\data\projects\b
 
 ### 3.4 Files
 
-检查文件是否存在
+#### 检查文件是否存在
 
 ```java
 Path path = Paths.get("helloword/data.txt");
@@ -955,7 +963,7 @@ System.out.println(Files.exists(path));
 
 
 
-创建一级目录
+#### 创建一级目录
 
 ```java
 Path path = Paths.get("helloword/d1");
@@ -967,7 +975,7 @@ Files.createDirectory(path);
 
 
 
-创建多级目录用
+#### 创建多级目录用
 
 ```java
 Path path = Paths.get("helloword/d1/d2");
@@ -976,7 +984,9 @@ Files.createDirectories(path);
 
 
 
-拷贝文件
+#### 拷贝文件
+
+（**性能也比较好，用的也是操作系统级别的复制，但不是channel.transferTo()的零拷贝**）
 
 ```java
 Path source = Paths.get("helloword/data.txt");
@@ -993,9 +1003,9 @@ Files.copy(source, target);
 Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
 ```
 
+> 拷贝文件就用**Files.copy(source, target)**和**channel.transferTo()**这两个性能高的比较好
 
-
-移动文件
+#### 移动文件
 
 ```java
 Path source = Paths.get("helloword/data.txt");
@@ -1008,7 +1018,7 @@ Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
 
 
 
-删除文件
+#### 删除文件
 
 ```java
 Path target = Paths.get("helloword/target.txt");
@@ -1020,7 +1030,7 @@ Files.delete(target);
 
 
 
-删除目录
+#### 删除目录
 
 ```java
 Path target = Paths.get("helloword/d1");
@@ -1032,113 +1042,193 @@ Files.delete(target);
 
 
 
-遍历目录文件
+#### 遍历目录文件
+
+>idea抽取一段代码为一个方法：Ctrl+Alt+M
 
 ```java
-public static void main(String[] args) throws IOException {
-    Path path = Paths.get("C:\\Program Files\\Java\\jdk1.8.0_91");
-    AtomicInteger dirCount = new AtomicInteger();
-    AtomicInteger fileCount = new AtomicInteger();
-    Files.walkFileTree(path, new SimpleFileVisitor<Path>(){
-        @Override
-        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) 
-            throws IOException {
-            System.out.println(dir);
-            dirCount.incrementAndGet();
-            return super.preVisitDirectory(dir, attrs);
-        }
+/**
+ * @Author Maybe
+ * Date on 2021/12/31  16:01
+ */
 
-        @Override
-        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) 
-            throws IOException {
-            System.out.println(file);
-            fileCount.incrementAndGet();
-            return super.visitFile(file, attrs);
-        }
-    });
-    System.out.println(dirCount); // 133
-    System.out.println(fileCount); // 1479
+public class TestFiLesWaLkFileTree {
+    public static void main(String[] args) throws IOException {
+        fiLesWaLkFileTree();
+    }
+
+    private static void fiLesWaLkFileTree() throws IOException {
+        Path path = Paths.get("D:\\JDK");
+        AtomicInteger dirCount = new AtomicInteger();
+        AtomicInteger fileCount = new AtomicInteger();
+
+        Files.walkFileTree(path, new SimpleFileVisitor<Path>() {//访问者模式
+
+            //在访问前获取到预访问目录
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) 
+                    throws IOException {
+                System.out.println("===>" + dir);
+                dirCount.incrementAndGet();
+                return super.preVisitDirectory(dir, attrs);
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException {
+                System.out.println(file);
+                fileCount.incrementAndGet();
+                return super.visitFile(file, attrs);
+            }
+        });
+        System.out.println("目录 " + path + "下一共有" + dirCount + "目录");
+        System.out.println("目录 " + path + "下一共有" + fileCount + "文件");
+    }
+}
+```
+
+**统计 jar 的数目**
+
+```java
+/**
+ * @Author Maybe
+ * Date on 2021/12/31  16:01
+ */
+
+public class TestFiLesWaLkFileTree {
+    public static void main(String[] args) throws IOException {
+//        fiLesWaLkFileTree();
+        endsWithJar();
+    }
+
+    private static void endsWithJar() throws IOException {
+        Path path = Paths.get("D:\\JDK");
+        AtomicInteger fileCount = new AtomicInteger();
+        Files.walkFileTree(path,new SimpleFileVisitor<Path>(){
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException {
+                if (file.toString().endsWith(".jar")) {
+                    fileCount.incrementAndGet();
+                }
+                return super.visitFile(file, attrs);
+            }
+        });
+        System.out.println("目录 " + path + "下一共有" + fileCount + " .jar 结尾的文件");
+    }
 }
 ```
 
 
 
-统计 jar 的数目
+#### 删除多级目录
 
 ```java
-Path path = Paths.get("C:\\Program Files\\Java\\jdk1.8.0_91");
-AtomicInteger fileCount = new AtomicInteger();
-Files.walkFileTree(path, new SimpleFileVisitor<Path>(){
-    @Override
-    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) 
-        throws IOException {
-        if (file.toFile().getName().endsWith(".jar")) {
-            fileCount.incrementAndGet();
-        }
-        return super.visitFile(file, attrs);
+/**
+ * @Author Maybe
+ * Date on 2021/12/31  16:01
+ */
+
+public class TestFiLesWaLkFileTree {
+    public static void main(String[] args) throws IOException {
+//        fiLesWaLkFileTree();
+//        endsWithJar();
+        deleteDir();
     }
-});
-System.out.println(fileCount); // 724
+    
+    //注意，删除后不经过回收站，直接就没了
+    private static void deleteDir() throws IOException {
+        Path path = Paths.get("XXX");
+        Files.walkFileTree(path,new SimpleFileVisitor<Path>(){
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException {
+                Files.delete(file);
+                return super.visitFile(file, attrs);
+            }
+
+            //遍历完一个目录后可以通过该方法再次获取该目录
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc)
+                    throws IOException {
+                Files.delete(dir);
+                return super.postVisitDirectory(dir, exc);
+            }
+        });
+    }
+}
 ```
 
 
 
-删除多级目录
-
-```java
-Path path = Paths.get("d:\\a");
-Files.walkFileTree(path, new SimpleFileVisitor<Path>(){
-    @Override
-    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) 
-        throws IOException {
-        Files.delete(file);
-        return super.visitFile(file, attrs);
-    }
-
-    @Override
-    public FileVisitResult postVisitDirectory(Path dir, IOException exc) 
-        throws IOException {
-        Files.delete(dir);
-        return super.postVisitDirectory(dir, exc);
-    }
-});
-```
-
-
-
-#### ⚠️ 删除很危险
+⚠️ **删除很危险**
 
 > 删除是危险操作，确保要递归删除的文件夹没有重要内容
 
 
 
-拷贝多级目录
+#### 拷贝多级目录
 
 ```java
-long start = System.currentTimeMillis();
-String source = "D:\\Snipaste-1.16.2-x64";
-String target = "D:\\Snipaste-1.16.2-x64aaa";
+/**
+ * @Author Maybe
+ * Date on 2021/12/31  16:47
+ */
 
-Files.walk(Paths.get(source)).forEach(path -> {
-    try {
-        String targetName = path.toString().replace(source, target);
-        // 是目录
-        if (Files.isDirectory(path)) {
-            Files.createDirectory(Paths.get(targetName));
-        }
-        // 是普通文件
-        else if (Files.isRegularFile(path)) {
-            Files.copy(path, Paths.get(targetName));
-        }
-    } catch (IOException e) {
-        e.printStackTrace();
+public class TestFilesCopy {
+    public static void main(String[] args) throws IOException {
+        //copy();
+        copy1();
     }
-});
-long end = System.currentTimeMillis();
-System.out.println(end - start);
+
+    private static void copy1() throws IOException {
+        String source = "D:\\A\\3\\Linux";
+        String target = "D:\\A";
+
+        Files.walk(Paths.get(source)).forEach(path -> {
+            try {
+                String targetName = path.toString().replace(source, target);
+                // 是目录
+                if (Files.isDirectory(path)) {
+                    Files.createDirectory(Paths.get(targetName));
+                }
+                // 是普通文件
+                else if (Files.isRegularFile(path)) {
+                    Files.copy(path, Paths.get(targetName));
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private static void copy() throws IOException {
+        Path source = Paths.get("D:\\A\\3\\Linux");
+
+        Path target = Paths.get("D:\\A");
+        Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
+
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs)
+                    throws IOException {
+                String targetName = dir.toString().replace(source.toString(), target.toString());
+                Path targetDir = Paths.get(targetName);
+                Files.createDirectory(targetDir);
+                return super.preVisitDirectory(dir, attrs);
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException {
+                String targetName = file.toString().replace(source.toString(), target.toString());
+                Path targetFile = Paths.get(targetName);
+                Files.copy(file, targetFile);
+                return super.visitFile(file, attrs);
+            }
+        });
+    }
+}
 ```
-
-
 
 
 
@@ -1220,7 +1310,7 @@ System.out.println("waiting...");
 ByteBuffer buffer = ByteBuffer.allocate(16);
 // 1. 创建了服务器
 ServerSocketChannel ssc = ServerSocketChannel.open();
-ssc.configureBlocking(false); // 非阻塞模式
+ssc.configureBlocking(false); // 非阻塞模式，使下面的ssc.accept()不会阻塞在那
 // 2. 绑定监听端口
 ssc.bind(new InetSocketAddress(8080));
 // 3. 连接集合
@@ -1230,7 +1320,7 @@ while (true) {
     SocketChannel sc = ssc.accept(); // 非阻塞，线程还会继续运行，如果没有连接建立，但sc是null
     if (sc != null) {
         log.debug("connected... {}", sc);
-        sc.configureBlocking(false); // 非阻塞模式
+        sc.configureBlocking(false); // 非阻塞模式使下面的channel.read()不会阻塞在那
         channels.add(sc);
     }
     for (SocketChannel channel : channels) {
@@ -1245,6 +1335,8 @@ while (true) {
     }
 }
 ```
+
+**最明显的缺点就是线程一直在循环做无用功**
 
 
 
