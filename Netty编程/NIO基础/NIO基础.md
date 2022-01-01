@@ -1405,6 +1405,8 @@ SelectionKey key = channel.register(selector, 绑定事件);
 
 #### 监听 Channel 事件
 
+监听事件（以及处理事件）依然写在一个死循环中，但在监听到没有事件时会阻塞在那，不会一直循环
+
 可以通过下面三种方法来监听是否有事件发生，方法的返回值代表有多少 channel 发生了事件
 
 方法1，阻塞直到绑定事件发生
@@ -1429,7 +1431,7 @@ int count = selector.select(long timeout);
 int count = selector.selectNow();
 ```
 
-
+**监听到事件后下面要么对事件进行处理，要么取消事件，不能置之不理，不然会一直循环**
 
 #### 💡 select 何时不阻塞
 
@@ -1467,41 +1469,42 @@ public class Client {
 服务器端代码为
 
 ```java
+/**
+ * @Author Maybe
+ * Date on 2022/1/1  15:41
+ */
 @Slf4j
-public class ChannelDemo6 {
+public class TestAccept {
     public static void main(String[] args) {
-        try (ServerSocketChannel channel = ServerSocketChannel.open()) {
-            channel.bind(new InetSocketAddress(8080));
-            System.out.println(channel);
+        try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
+            serverSocketChannel.bind(new InetSocketAddress(8080));
+            serverSocketChannel.configureBlocking(false);
             Selector selector = Selector.open();
-            channel.configureBlocking(false);
-            channel.register(selector, SelectionKey.OP_ACCEPT);
+            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
             while (true) {
-                int count = selector.select();
-//                int count = selector.selectNow();
-                log.debug("select count: {}", count);
-//                if(count <= 0) {
-//                    continue;
-//                }
-
+                // select 方法的返回值就是已经就绪的事件
+                int select = selector.select();
+                if (select <= 0) {
+                    continue;
+                }
                 // 获取所有事件
-                Set<SelectionKey> keys = selector.selectedKeys();
-
+                Set<SelectionKey> selectionKeySet = selector.selectedKeys();
                 // 遍历所有事件，逐一处理
-                Iterator<SelectionKey> iter = keys.iterator();
-                while (iter.hasNext()) {
-                    SelectionKey key = iter.next();
-                    // 判断事件类型
+                Iterator<SelectionKey> keyIterator = selectionKeySet.iterator();
+                while (keyIterator.hasNext()) {
+                    SelectionKey key = keyIterator.next();
+                    //判断事件类型
                     if (key.isAcceptable()) {
-                        ServerSocketChannel c = (ServerSocketChannel) key.channel();
+                        ServerSocketChannel channel = (ServerSocketChannel) key.channel();
                         // 必须处理
-                        SocketChannel sc = c.accept();
-                        log.debug("{}", sc);
+                        SocketChannel accept = channel.accept();
+                        log.debug("事件: {} 已处理", accept);
                     }
                     // 处理完毕，必须将事件移除
-                    iter.remove();
+                    keyIterator.remove();
                 }
+
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -1521,53 +1524,54 @@ public class ChannelDemo6 {
 ### 4.4 处理 read 事件
 
 ```java
+/**
+ * @Author Maybe
+ * Date on 2022/1/1  16:25
+ */
 @Slf4j
-public class ChannelDemo6 {
+public class TestRead {
     public static void main(String[] args) {
-        try (ServerSocketChannel channel = ServerSocketChannel.open()) {
-            channel.bind(new InetSocketAddress(8080));
-            System.out.println(channel);
+        try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
+            serverSocketChannel.bind(new InetSocketAddress(8080));
+            serverSocketChannel.configureBlocking(false);
             Selector selector = Selector.open();
-            channel.configureBlocking(false);
-            channel.register(selector, SelectionKey.OP_ACCEPT);
+            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
             while (true) {
-                int count = selector.select();
-//                int count = selector.selectNow();
-                log.debug("select count: {}", count);
-//                if(count <= 0) {
-//                    continue;
-//                }
-
+                // select 方法的返回值就是已经就绪的事件
+                int select = selector.select();
+                if (select <= 0) {
+                    continue;
+                }
                 // 获取所有事件
-                Set<SelectionKey> keys = selector.selectedKeys();
-
+                Set<SelectionKey> selectionKeySet = selector.selectedKeys();
                 // 遍历所有事件，逐一处理
-                Iterator<SelectionKey> iter = keys.iterator();
-                while (iter.hasNext()) {
-                    SelectionKey key = iter.next();
-                    // 判断事件类型
+                Iterator<SelectionKey> keyIterator = selectionKeySet.iterator();
+                while (keyIterator.hasNext()) {
+                    SelectionKey key = keyIterator.next();
+                    //判断事件类型
                     if (key.isAcceptable()) {
-                        ServerSocketChannel c = (ServerSocketChannel) key.channel();
+                        ServerSocketChannel channel = (ServerSocketChannel) key.channel();
                         // 必须处理
-                        SocketChannel sc = c.accept();
-                        sc.configureBlocking(false);
-                        sc.register(selector, SelectionKey.OP_READ);
-                        log.debug("连接已建立: {}", sc);
+                        SocketChannel accept = channel.accept();
+                        log.debug("事件: {} 已处理", accept);
+                        accept.configureBlocking(false);
+                        accept.register(selector, SelectionKey.OP_READ);
+                        log.debug("已建立连接 {}", accept);
                     } else if (key.isReadable()) {
-                        SocketChannel sc = (SocketChannel) key.channel();
-                        ByteBuffer buffer = ByteBuffer.allocate(128);
-                        int read = sc.read(buffer);
-                        if(read == -1) {
+                        SocketChannel channel = (SocketChannel) key.channel();
+                        ByteBuffer byteBuffer = ByteBuffer.allocate(128);
+                        int read = channel.read(byteBuffer);
+                        if (read == -1) {
                             key.cancel();
-                            sc.close();
+                            channel.close();
                         } else {
-                            buffer.flip();
-                            debug(buffer);
+                            byteBuffer.flip();
+                            debugAll(byteBuffer);
                         }
                     }
                     // 处理完毕，必须将事件移除
-                    iter.remove();
+                    keyIterator.remove();
                 }
             }
         } catch (IOException e) {
@@ -1603,7 +1607,7 @@ sun.nio.ch.ServerSocketChannelImpl[/0:0:0:0:0:0:0:0:8080]
 
 #### 💡 为何要 iter.remove()
 
-> 因为 select 在事件发生后，就会将相关的 key 放入 selectedKeys 集合，但不会在处理完后从 selectedKeys 集合中移除，需要我们自己编码删除。例如
+> 因为 select 在事件发生后，就会将相关的 key 放入 selectedKeys 集合，**但不会在处理完后从 selectedKeys 集合中移除**，需要我们自己编码删除。例如
 >
 > * 第一次触发了 ssckey 上的 accept 事件，没有移除 ssckey 
 > * 第二次触发了 sckey 上的 read 事件，但这时 selectedKeys 中还有上次的 ssckey ，在处理时因为没有真正的 serverSocket 连上了，就会导致空指针异常
@@ -1613,6 +1617,38 @@ sun.nio.ch.ServerSocketChannelImpl[/0:0:0:0:0:0:0:0:8080]
 #### 💡 cancel 的作用
 
 > cancel 会取消注册在 selector 上的 channel，并从 keys 集合中删除 key 后续不会再监听事件
+
+
+
+#### 💡客户端断开连接问题
+
+**强制断开**
+
+所谓强制断开就是不走客户端的channel.close()方法，强制断开时会发生IO异常，如果不进行捕获就会使程序退出运行
+
+**正常断开**
+
+正常断开就是走客户端的 `channel.close()` 方法，此时不会发生异常并且触发一次服务端的 read 事件，当read事件进行读取时因为无内容会返回 -1 ，因此也要进行处理
+
+```java
+else if (key.isReadable()) {
+    try {
+        SocketChannel channel = (SocketChannel) key.channel();
+        ByteBuffer byteBuffer = ByteBuffer.allocate(128);
+        int read = channel.read(byteBuffer);
+        if (read == -1) { //如果是正常断开，返回值就是 -1
+            key.cancel();
+            channel.close();
+        } else {
+            byteBuffer.flip();
+            debugAll(byteBuffer);
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+        key.channel(); //一定要进行处理，不然即使断连的IO异常捕获到也会一直循环
+    }
+}
+```
 
 
 
@@ -1673,7 +1709,7 @@ ld�
 
 #### 处理消息的边界
 
-![](img(NIO基础)/0023.png)
+<img src="img(NIO基础)/0023.png" style="zoom:80%;" />
 
 * 一种思路是固定消息长度，数据包大小一样，服务器按预定长度读取，缺点是浪费带宽
 * 另一种思路是按分隔符拆分，缺点是效率低
@@ -1702,82 +1738,89 @@ b2 ->> b2: 01234567890abcdef3333\r
 服务器端
 
 ```java
-private static void split(ByteBuffer source) {
-    source.flip();
-    for (int i = 0; i < source.limit(); i++) {
-        // 找到一条完整消息
-        if (source.get(i) == '\n') {
-            int length = i + 1 - source.position();
-            // 把这条完整消息存入新的 ByteBuffer
-            ByteBuffer target = ByteBuffer.allocate(length);
-            // 从 source 读，向 target 写
-            for (int j = 0; j < length; j++) {
-                target.put(source.get());
+/**
+ * @Author Maybe
+ * Date on 2022/1/1  16:25
+ */
+@Slf4j
+public class TestRead2 {
+    public static void split(ByteBuffer source) {
+        source.flip();
+        for (int i = 0; i < source.limit(); i++) {
+            if ('\n' == source.get(i)) {//注意：这里的 \n 只能用单引号，且只能使用==，不能用equals()
+                //计算出目标 Buffer的长度
+                int length = i + 1 - source.position();
+                ByteBuffer target = ByteBuffer.allocate(length);
+                for (int j = 0; j < length; j++) {
+                    target.put(source.get());
+                }
+                debugAll(target);
             }
-            debugAll(target);
         }
+        source.compact();
     }
-    source.compact(); // 0123456789abcdef  position 16 limit 16
-}
 
-public static void main(String[] args) throws IOException {
-    // 1. 创建 selector, 管理多个 channel
-    Selector selector = Selector.open();
-    ServerSocketChannel ssc = ServerSocketChannel.open();
-    ssc.configureBlocking(false);
-    // 2. 建立 selector 和 channel 的联系（注册）
-    // SelectionKey 就是将来事件发生后，通过它可以知道事件和哪个channel的事件
-    SelectionKey sscKey = ssc.register(selector, 0, null);
-    // key 只关注 accept 事件
-    sscKey.interestOps(SelectionKey.OP_ACCEPT);
-    log.debug("sscKey:{}", sscKey);
-    ssc.bind(new InetSocketAddress(8080));
-    while (true) {
-        // 3. select 方法, 没有事件发生，线程阻塞，有事件，线程才会恢复运行
-        // select 在事件未处理时，它不会阻塞, 事件发生后要么处理，要么取消，不能置之不理
-        selector.select();
-        // 4. 处理事件, selectedKeys 内部包含了所有发生的事件
-        Iterator<SelectionKey> iter = selector.selectedKeys().iterator(); // accept, read
-        while (iter.hasNext()) {
-            SelectionKey key = iter.next();
-            // 处理key 时，要从 selectedKeys 集合中删除，否则下次处理就会有问题
-            iter.remove();
-            log.debug("key: {}", key);
-            // 5. 区分事件类型
-            if (key.isAcceptable()) { // 如果是 accept
-                ServerSocketChannel channel = (ServerSocketChannel) key.channel();
-                SocketChannel sc = channel.accept();
-                sc.configureBlocking(false);
-                ByteBuffer buffer = ByteBuffer.allocate(16); // attachment
-                // 将一个 byteBuffer 作为附件关联到 selectionKey 上
-                SelectionKey scKey = sc.register(selector, 0, buffer);
-                scKey.interestOps(SelectionKey.OP_READ);
-                log.debug("{}", sc);
-                log.debug("scKey:{}", scKey);
-            } else if (key.isReadable()) { // 如果是 read
-                try {
-                    SocketChannel channel = (SocketChannel) key.channel(); // 拿到触发事件的channel
-                    // 获取 selectionKey 上关联的附件
-                    ByteBuffer buffer = (ByteBuffer) key.attachment();
-                    int read = channel.read(buffer); // 如果是正常断开，read 的方法的返回值是 -1
-                    if(read == -1) {
-                        key.cancel();
-                    } else {
-                        split(buffer);
-                        // 需要扩容
-                        if (buffer.position() == buffer.limit()) {
-                            ByteBuffer newBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
-                            buffer.flip();
-                            newBuffer.put(buffer); // 0123456789abcdef3333\n
-                            key.attach(newBuffer);
+    public static void main(String[] args) {
+        try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
+            serverSocketChannel.bind(new InetSocketAddress(8080));
+            serverSocketChannel.configureBlocking(false);
+            Selector selector = Selector.open();
+            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+
+            while (true) {
+                // select 方法的返回值就是已经就绪的事件
+                int select = selector.select();
+                if (select <= 0) {
+                    continue;
+                }
+                // 获取所有事件
+                Set<SelectionKey> selectionKeySet = selector.selectedKeys();
+                // 遍历所有事件，逐一处理
+                Iterator<SelectionKey> keyIterator = selectionKeySet.iterator();
+                while (keyIterator.hasNext()) {
+                    SelectionKey key = keyIterator.next();
+                    //判断事件类型
+                    if (key.isAcceptable()) {
+                        ServerSocketChannel channel = (ServerSocketChannel) key.channel();
+                        // 必须处理
+                        SocketChannel accept = channel.accept();
+                        log.debug("事件: {} 已处理", accept);
+                        accept.configureBlocking(false);
+                        ByteBuffer buffer = ByteBuffer.allocate(16);// attachment
+                        // 将一个 byteBuffer 作为附件关联到 selectionKey 上，也就是register()的第三个参数
+                        accept.register(selector, SelectionKey.OP_READ, buffer);
+                        log.debug("已建立连接 {}", accept);
+                    } else if (key.isReadable()) {
+                        try {
+                            // 拿到触发事件的channel
+                            SocketChannel channel = (SocketChannel) key.channel();
+                            // 获取 selectionKey 上关联的附件
+                            ByteBuffer byteBuffer = (ByteBuffer) key.attachment();
+                            int read = channel.read(byteBuffer);
+                            if (read == -1) { //如果是正常断开，返回值就是 -1
+                                key.cancel();
+                                channel.close();
+                            } else {
+                                split(byteBuffer);
+                                // 需要扩容
+                                if (byteBuffer.position() == byteBuffer.limit()) {
+                                    ByteBuffer newBuffer = ByteBuffer.allocate(byteBuffer.capacity() * 2);
+                                    byteBuffer.flip();
+                                    newBuffer.put(byteBuffer);
+                                    key.attach(newBuffer);
+                                }
+                            }
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                            key.channel(); //一定要进行处理，不然即使断连的IO异常捕获到也会一直循环
                         }
                     }
-
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    key.cancel();  // 因为客户端断开了,因此需要将 key 取消（从 selector 的 keys 集合中真正删除 key）
+                    // 处理完毕，必须将事件移除
+                    keyIterator.remove();
                 }
             }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
@@ -1794,8 +1837,6 @@ sc.write(Charset.defaultCharset().encode("0123\n456789abcdef"));
 sc.write(Charset.defaultCharset().encode("0123456789abcdef3333\n"));
 System.in.read();
 ```
-
-
 
 
 
