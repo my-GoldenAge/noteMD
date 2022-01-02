@@ -1344,7 +1344,7 @@ while (true) {
 
 单线程可以配合 Selector 完成对多个 Channel 可读写事件的监控，这称之为多路复用
 
-* 多路复用仅针对网络 IO、普通文件 IO 没法利用多路复用
+* **多路复用仅针对网络 IO**、普通文件 IO 没法利用多路复用
 * 如果不用 Selector 的非阻塞模式，线程大部分时间都在做无用功，而 Selector 能够保证
   * 有可连接事件时才去连接
   * 有可读事件才去读取
@@ -1417,7 +1417,7 @@ int count = selector.select();
 
 
 
-方法2，阻塞直到绑定事件发生，或是超时（时间单位为 ms）
+方法2，阻塞直到绑定事件发生，或是超时（时间单位为 ms），超时就不再阻塞
 
 ```java
 int count = selector.select(long timeout);
@@ -1826,6 +1826,8 @@ public class TestRead2 {
 }
 ```
 
+**以上扩容方式只是处理消息边界的冰山一角（比如就没用考虑缩容），Netty处理的会更加完善**
+
 客户端
 
 ```java
@@ -1849,11 +1851,7 @@ System.in.read();
 
 
 
-
-
 ### 4.5 处理 write 事件
-
-
 
 #### 一次无法写完例子
 
@@ -1861,13 +1859,17 @@ System.in.read();
 * 用 selector 监听所有 channel 的可写事件，每个 channel 都需要一个 key 来跟踪 buffer，但这样又会导致占用内存过多，就有两阶段策略
   * 当消息处理器第一次写入消息时，才将 channel 注册到 selector 上
   * selector 检查 channel 上的可写事件，如果所有的数据写完了，就取消 channel 的注册
-  * 如果不取消，会每次可写均会触发 write 事件
+  * **如果不取消，会每次可写均会触发 write 事件**
 
 
 
 ```java
-public class WriteServer {
+/**
+ * @Author Maybe
+ * Date on 2022/1/2  15:08
+ */
 
+public class TestWrite {
     public static void main(String[] args) throws IOException {
         ServerSocketChannel ssc = ServerSocketChannel.open();
         ssc.configureBlocking(false);
@@ -1876,41 +1878,47 @@ public class WriteServer {
         Selector selector = Selector.open();
         ssc.register(selector, SelectionKey.OP_ACCEPT);
 
-        while(true) {
+        while (true) {
             selector.select();
+            Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+            while (iterator.hasNext()) {
+                SelectionKey key = iterator.next();
+                iterator.remove();//紧随其后
 
-            Iterator<SelectionKey> iter = selector.selectedKeys().iterator();
-            while (iter.hasNext()) {
-                SelectionKey key = iter.next();
-                iter.remove();
                 if (key.isAcceptable()) {
-                    SocketChannel sc = ssc.accept();
+                    ServerSocketChannel ssChannel = (ServerSocketChannel) key.channel();
+                    SocketChannel sc = ssChannel.accept();
                     sc.configureBlocking(false);
-                    SelectionKey sckey = sc.register(selector, SelectionKey.OP_READ);
+                    SelectionKey scKey = sc.register(selector, SelectionKey.OP_READ);
                     // 1. 向客户端发送内容
                     StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < 3000000; i++) {
-                        sb.append("a");
+                    for (int i = 0; i < 5000000; i++) {
+                        sb.append('a');
                     }
-                    ByteBuffer buffer = Charset.defaultCharset().encode(sb.toString());
+                    ByteBuffer buffer = StandardCharsets.UTF_8.encode(sb.toString());
                     int write = sc.write(buffer);
                     // 3. write 表示实际写了多少字节
                     System.out.println("实际写入字节:" + write);
                     // 4. 如果有剩余未读字节，才需要关注写事件
+                    // 因为网络写入是有限制的，如果一次不能写完，可以将该sc追加标记一个写事件
+                    // 这里不要采用循环到写完的方式，因为此时是单线程的，没写完就先标记上写事件，
+                    // 等下次循环中可写了会自动再次触发写事件
                     if (buffer.hasRemaining()) {
                         // read 1  write 4
                         // 在原有关注事件的基础上，多关注 写事件
-                        sckey.interestOps(sckey.interestOps() + SelectionKey.OP_WRITE);
-                        // 把 buffer 作为附件加入 sckey
-                        sckey.attach(buffer);
+                        scKey.interestOps(scKey.interestOps() + SelectionKey.OP_WRITE);
+                        // 不要忘记把 buffer 作为附件加入 scKey，方便下次继续写
+                        scKey.attach(buffer);
                     }
                 } else if (key.isWritable()) {
                     ByteBuffer buffer = (ByteBuffer) key.attachment();
                     SocketChannel sc = (SocketChannel) key.channel();
                     int write = sc.write(buffer);
                     System.out.println("实际写入字节:" + write);
+                    // 只要还没写完，因为上面该 channel 追加了写事件，就会一直触发，直到写完
                     if (!buffer.hasRemaining()) { // 写完了
                         key.interestOps(key.interestOps() - SelectionKey.OP_WRITE);
+                        // 别忘了将附件 buffer 置空
                         key.attach(null);
                     }
                 }
@@ -1955,7 +1963,7 @@ public class WriteClient {
 
 #### 💡 write 为何要取消
 
-只要向 channel 发送数据时，socket 缓冲可写，这个事件会频繁触发，因此应当只在 socket 缓冲区写不下时再关注可写事件，数据写完之后再取消关注
+只要向 channel 发送数据时，socket 缓冲可写，这个事件会频繁触发，**因此应当只在 socket 缓冲区写不下时再关注可写事件，数据写完之后再取消关注**
 
 
 
@@ -1979,17 +1987,22 @@ public class WriteClient {
 
 
 ```java
-public class ChannelDemo7 {
+/**
+ * @Author Maybe
+ * Date on 2022/1/2  17:44
+ */
+
+public class TestMultiThread {
     public static void main(String[] args) throws IOException {
         new BossEventLoop().register();
     }
-
 
     @Slf4j
     static class BossEventLoop implements Runnable {
         private Selector boss;
         private WorkerEventLoop[] workers;
         private volatile boolean start = false;
+        // 方便对下面的workers使用轮循算法
         AtomicInteger index = new AtomicInteger();
 
         public void register() throws IOException {
@@ -1998,8 +2011,7 @@ public class ChannelDemo7 {
                 ssc.bind(new InetSocketAddress(8080));
                 ssc.configureBlocking(false);
                 boss = Selector.open();
-                SelectionKey ssckey = ssc.register(boss, 0, null);
-                ssckey.interestOps(SelectionKey.OP_ACCEPT);
+                ssc.register(boss, SelectionKey.OP_ACCEPT, null);
                 workers = initEventLoops();
                 new Thread(this, "boss").start();
                 log.debug("boss start...");
@@ -2008,6 +2020,9 @@ public class ChannelDemo7 {
         }
 
         public WorkerEventLoop[] initEventLoops() {
+            // 通过 Runtime.getRuntime().availableProcessors() 方法可以动态获取当前主机CPU的核心数，
+            // 从而决定该分配几个worker线程
+            // 但是该方法在 JDK10 之前的版本中在docker容器中使用会有Bug
 //        EventLoop[] eventLoops = new EventLoop[Runtime.getRuntime().availableProcessors()];
             WorkerEventLoop[] workerEventLoops = new WorkerEventLoop[2];
             for (int i = 0; i < workerEventLoops.length; i++) {
@@ -2030,6 +2045,7 @@ public class ChannelDemo7 {
                             SocketChannel sc = c.accept();
                             sc.configureBlocking(false);
                             log.debug("{} connected", sc.getRemoteAddress());
+                            // 这里使用一个轮循的算法
                             workers[index.getAndIncrement() % workers.length].register(sc);
                         }
                     }
@@ -2058,16 +2074,20 @@ public class ChannelDemo7 {
                 new Thread(this, "worker-" + index).start();
                 start = true;
             }
+            // 这里一定要注意：
+            // sc.register()注册不能在worker.select();阻塞的时候，这里使用的是一个队列来解决的
             tasks.add(() -> {
                 try {
-                    SelectionKey sckey = sc.register(worker, 0, null);
-                    sckey.interestOps(SelectionKey.OP_READ);
+                    sc.register(worker, SelectionKey.OP_READ, null);
                     worker.selectNow();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             });
             worker.wakeup();
+            // 也可以使用下面的方法（理论上也是不会阻塞的）
+//            worker.wakeup();
+//            sc.register(worker, SelectionKey.OP_READ, null);
         }
 
         @Override
@@ -2109,6 +2129,7 @@ public class ChannelDemo7 {
                 }
             }
         }
+
     }
 }
 ```
@@ -2117,7 +2138,7 @@ public class ChannelDemo7 {
 
 #### 💡 如何拿到 cpu 个数
 
-> * Runtime.getRuntime().availableProcessors() 如果工作在 docker 容器下，因为容器不是物理隔离的，会拿到物理 cpu 个数，而不是容器申请时的个数
+> * Runtime.getRuntime().availableProcessors() 如果工作在 docker 容器下，因为容器不是物理隔离的，会拿到物理 cpu 个数，而不是容器申请时的个数（比如物理主机有12个核，分给这个 docker 容器2个，那么该方法拿到的还是12，会高估核心数）
 > * 这个问题直到 jdk 10 才修复，使用 jvm 参数 UseContainerSupport 配置， 默认开启
 
 
