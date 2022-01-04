@@ -2306,7 +2306,7 @@ socket.getOutputStream().write(buf);
 通过 DirectByteBuf 
 
 * ByteBuffer.allocate(10)  HeapByteBuffer 使用的还是 java 内存
-* ByteBuffer.allocateDirect(10)  DirectByteBuffer 使用的是操作系统内存
+* ByteBuffer.allocateDirect(10)  DirectByteBuffer 使用的是操作系统内存，而且这块内存java和操作系统都可以访问
 
  <img src="img(NIO基础)/0025.png" style="zoom:80%;" />
 
@@ -2324,7 +2324,7 @@ socket.getOutputStream().write(buf);
 
  <img src="img(NIO基础)/0026.png" style="zoom:80%;" />
 
-1. java 调用 transferTo 方法后，要从 java 程序的**用户态**切换至**内核态**，使用 DMA将数据读入**内核缓冲区**，不会使用 cpu
+1. java 调用 transferTo 方法后，要从 java 程序的**用户态**切换至**内核态**，使用 DMA （一种专门用于与硬盘数据交互的硬件）将数据读入**内核缓冲区**，不会使用 cpu
 2. 数据从**内核缓冲区**传输到 **socket 缓冲区**，cpu 会参与拷贝
 3. 最后使用 DMA 将 **socket 缓冲区**的数据写入网卡，不会使用 cpu
 
@@ -2351,7 +2351,7 @@ socket.getOutputStream().write(buf);
 
 
 
-### 5.3 AIO
+### 5.3 AIO (异步IO)
 
 AIO 用来解决数据复制阶段的阻塞问题
 
@@ -2424,7 +2424,7 @@ public class AioDemo1 {
 
 #### 💡 守护线程
 
-默认文件 AIO 使用的线程都是守护线程，所以最后要执行 `System.in.read()` 以避免守护线程意外结束
+**默认文件 AIO 使用的线程都是守护线程**，所以最后要执行 `System.in.read()` 以避免守护线程意外结束
 
 
 
