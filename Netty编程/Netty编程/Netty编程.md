@@ -191,7 +191,7 @@ EventLoop 本质是一个单线程执行器（同时维护了一个 Selector）�
 
 它的继承关系比较复杂
 
-* 一条线是继承自 j.u.c.ScheduledExecutorService 因此包含了线程池中所有的方法
+* 一条线是继承自 java.util.concurrent.ScheduledExecutorService 因此包含了线程池中所有的方法
 * 另一条线是继承自 netty 自己的 OrderedEventExecutor，
   * 提供了 boolean inEventLoop(Thread thread) 方法判断一个线程是否属于此 EventLoop
   * 提供了 parent 方法来看看自己属于哪个 EventLoopGroup
@@ -318,92 +318,55 @@ public static void main(String[] args) throws InterruptedException {
 再增加两个非 nio 工人
 
 ```java
-DefaultEventLoopGroup normalWorkers = new DefaultEventLoopGroup(2);
-new ServerBootstrap()
-    .group(new NioEventLoopGroup(1), new NioEventLoopGroup(2))
-    .channel(NioServerSocketChannel.class)
-    .childHandler(new ChannelInitializer<NioSocketChannel>() {
-        @Override
-        protected void initChannel(NioSocketChannel ch)  {
-            ch.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));
-            ch.pipeline().addLast(normalWorkers,"myhandler",
-              new ChannelInboundHandlerAdapter() {
-                @Override
-                public void channelRead(ChannelHandlerContext ctx, Object msg) {
-                    ByteBuf byteBuf = msg instanceof ByteBuf ? ((ByteBuf) msg) : null;
-                    if (byteBuf != null) {
-                        byte[] buf = new byte[16];
-                        ByteBuf len = byteBuf.readBytes(buf, 0, byteBuf.readableBytes());
-                        log.debug(new String(buf));
+/**
+ * @Author Maybe
+ * Date on 2022/1/11  16:57
+ */
+@Slf4j
+public class TestEventLoop {
+    public static void main(String[] args) throws InterruptedException {
+        //细分2:创建一个 独立的EventLoopGroup，用于处理时间较长的操作
+        DefaultEventLoopGroup eventGroup = new DefaultEventLoopGroup(2);
+        new ServerBootstrap()
+                // boss 和worker
+                //细分1: boss 只负责 ServerSocketChannel 上 accept 事件
+                //      worker 只负责 socketChannel 上的读写
+                .group(new NioEventLoopGroup(), new NioEventLoopGroup(3))
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<NioSocketChannel>() {
+                    @Override
+                    protected void initChannel(NioSocketChannel channel) throws Exception {
+                        // addLast() 可以通过链式编程写多个handler，用于防止出现操作复杂运行时间长的handler
+                        // 也能指定其他的 EventLoopGroup
+                        channel.pipeline().addLast("handler1", new ChannelInboundHandlerAdapter() {
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) 
+                                    throws Exception {
+                                ByteBuf byteBuf = (ByteBuf) msg;
+                                log.debug(byteBuf.toString(StandardCharsets.UTF_8));
+                                // 这里如果该channel执行期间内有其他的事件进来了
+                                // 就会触发该方法并将为执行完的事件交给下一个 handler 继续执行
+                                ctx.fireChannelRead(msg);
+                            }
+                        }).addLast(eventGroup, "handler2", new ChannelInboundHandlerAdapter() {
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) 
+                                    throws Exception {
+                                ByteBuf byteBuf = (ByteBuf) msg;
+                                log.debug(byteBuf.toString(StandardCharsets.UTF_8));
+                            }
+                        });
                     }
-                }
-            });
-        }
-    }).bind(8080).sync();
+                })
+                .bind(8080)
+                .sync();
+    }
+}
 ```
 
 客户端代码不变，启动三次，分别修改发送字符串为 zhangsan（第一次），lisi（第二次），wangwu（第三次）
 
-输出
-
-```
-22:19:48 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x251562d5, L:/127.0.0.1:8080 - R:/127.0.0.1:52588] REGISTERED
-22:19:48 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x251562d5, L:/127.0.0.1:8080 - R:/127.0.0.1:52588] ACTIVE
-22:19:48 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x251562d5, L:/127.0.0.1:8080 - R:/127.0.0.1:52588] READ: 8B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 7a 68 61 6e 67 73 61 6e                         |zhangsan        |
-+--------+-------------------------------------------------+----------------+
-22:19:48 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x251562d5, L:/127.0.0.1:8080 - R:/127.0.0.1:52588] READ COMPLETE
-22:19:48 [DEBUG] [defaultEventLoopGroup-2-1] c.i.o.EventLoopTest - zhangsan        
-22:19:50 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x251562d5, L:/127.0.0.1:8080 - R:/127.0.0.1:52588] READ: 8B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 7a 68 61 6e 67 73 61 6e                         |zhangsan        |
-+--------+-------------------------------------------------+----------------+
-22:19:50 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x251562d5, L:/127.0.0.1:8080 - R:/127.0.0.1:52588] READ COMPLETE
-22:19:50 [DEBUG] [defaultEventLoopGroup-2-1] c.i.o.EventLoopTest - zhangsan        
-22:20:24 [DEBUG] [nioEventLoopGroup-4-2] i.n.h.l.LoggingHandler - [id: 0x94b2a840, L:/127.0.0.1:8080 - R:/127.0.0.1:52612] REGISTERED
-22:20:24 [DEBUG] [nioEventLoopGroup-4-2] i.n.h.l.LoggingHandler - [id: 0x94b2a840, L:/127.0.0.1:8080 - R:/127.0.0.1:52612] ACTIVE
-22:20:25 [DEBUG] [nioEventLoopGroup-4-2] i.n.h.l.LoggingHandler - [id: 0x94b2a840, L:/127.0.0.1:8080 - R:/127.0.0.1:52612] READ: 4B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 6c 69 73 69                                     |lisi            |
-+--------+-------------------------------------------------+----------------+
-22:20:25 [DEBUG] [nioEventLoopGroup-4-2] i.n.h.l.LoggingHandler - [id: 0x94b2a840, L:/127.0.0.1:8080 - R:/127.0.0.1:52612] READ COMPLETE
-22:20:25 [DEBUG] [defaultEventLoopGroup-2-2] c.i.o.EventLoopTest - lisi            
-22:20:27 [DEBUG] [nioEventLoopGroup-4-2] i.n.h.l.LoggingHandler - [id: 0x94b2a840, L:/127.0.0.1:8080 - R:/127.0.0.1:52612] READ: 4B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 6c 69 73 69                                     |lisi            |
-+--------+-------------------------------------------------+----------------+
-22:20:27 [DEBUG] [nioEventLoopGroup-4-2] i.n.h.l.LoggingHandler - [id: 0x94b2a840, L:/127.0.0.1:8080 - R:/127.0.0.1:52612] READ COMPLETE
-22:20:27 [DEBUG] [defaultEventLoopGroup-2-2] c.i.o.EventLoopTest - lisi            
-22:20:38 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x79a26af9, L:/127.0.0.1:8080 - R:/127.0.0.1:52625] REGISTERED
-22:20:38 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x79a26af9, L:/127.0.0.1:8080 - R:/127.0.0.1:52625] ACTIVE
-22:20:38 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x79a26af9, L:/127.0.0.1:8080 - R:/127.0.0.1:52625] READ: 6B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 77 61 6e 67 77 75                               |wangwu          |
-+--------+-------------------------------------------------+----------------+
-22:20:38 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x79a26af9, L:/127.0.0.1:8080 - R:/127.0.0.1:52625] READ COMPLETE
-22:20:38 [DEBUG] [defaultEventLoopGroup-2-1] c.i.o.EventLoopTest - wangwu          
-22:20:40 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x79a26af9, L:/127.0.0.1:8080 - R:/127.0.0.1:52625] READ: 6B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 77 61 6e 67 77 75                               |wangwu          |
-+--------+-------------------------------------------------+----------------+
-22:20:40 [DEBUG] [nioEventLoopGroup-4-1] i.n.h.l.LoggingHandler - [id: 0x79a26af9, L:/127.0.0.1:8080 - R:/127.0.0.1:52625] READ COMPLETE
-22:20:40 [DEBUG] [defaultEventLoopGroup-2-1] c.i.o.EventLoopTest - wangwu          
-```
-
-可以看到，nio 工人和 非 nio 工人也分别绑定了 channel（LoggingHandler 由 nio 工人执行，而我们自己的 handler 由非 nio 工人执行）
+可以看到，nio 工人和 非 nio 工人也分别绑定了 channel，而 handler1 和 handler2 都会执行
 
 
 
@@ -413,16 +376,16 @@ new ServerBootstrap()
 
 #### 💡 handler 执行中如何换人？
 
-关键代码 `io.netty.channel.AbstractChannelHandlerContext#invokeChannelRead()`
+关键代码 `io.netty.channel.AbstractChannelHandlerContext#invokeChannelRead()`，以下为Netty源码：
 
 ```java
 static void invokeChannelRead(final AbstractChannelHandlerContext next, Object msg) {
     final Object m = next.pipeline.touch(ObjectUtil.checkNotNull(msg, "msg"), next);
     // 下一个 handler 的事件循环是否与当前的事件循环是同一个线程
-    EventExecutor executor = next.executor();
+    EventExecutor executor = next.executor();// 返回下一个handler的EventLoop
     
     // 是，直接调用
-    if (executor.inEventLoop()) {
+    if (executor.inEventLoop()) {// 判断当前handler中的线程，是否和eventLoop是同一个线程
         next.invokeChannelRead(m);
     } 
     // 不是，将要执行的代码作为任务提交给下一个事件循环处理（换人）
@@ -436,6 +399,8 @@ static void invokeChannelRead(final AbstractChannelHandlerContext next, Object m
     }
 }
 ```
+
+**总结就是：**
 
 * 如果两个 handler 绑定的是同一个线程，那么就直接调用
 * 否则，把要调用的代码封装为一个任务对象，由下一个 handler 的线程来调用
