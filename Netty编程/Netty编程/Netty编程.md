@@ -403,7 +403,7 @@ static void invokeChannelRead(final AbstractChannelHandlerContext next, Object m
 **总结就是：**
 
 * 如果两个 handler 绑定的是同一个线程，那么就直接调用
-* 否则，把要调用的代码封装为一个任务对象，由下一个 handler 的线程来调用
+* 否则，把要调用的代码封装为一个任务对象，由下一个 handler 的线程来调用（也就是说会启用一个新的线程来处理）
 
 
 
@@ -512,70 +512,87 @@ channelFuture.sync().channel().writeAndFlush(new Date() + ": hello world!");
 
 * 1 处返回的是 ChannelFuture 对象，它的作用是利用 channel() 方法来获取 Channel 对象
 
-**注意** connect 方法是异步的，意味着不等连接建立，方法执行就返回了。因此 channelFuture 对象中不能【立刻】获得到正确的 Channel 对象
+**注意：** connect 方法是异步的，意味着不等连接建立，方法执行就返回了。因此 channelFuture 对象中不能【立刻】获得到正确的 Channel 对象
 
-实验如下：
+也就是说，主线程在执行到 `.connect()` 方法时，由于建立连接是一个异步线程去执行的而且需要一两秒的时间，但主线程不会去等待你建立好连接，它会瞬间去执行下面的语句 `Channel channel = channelFuture.channel();` ，所以此时就出现了问题，因为连接还没建立好，所以根本就没用 channelFuture 对象，<u>因此也就发送不了数据</u>
 
-```java
-ChannelFuture channelFuture = new Bootstrap()
-    .group(new NioEventLoopGroup())
-    .channel(NioSocketChannel.class)
-    .handler(new ChannelInitializer<Channel>() {
-        @Override
-        protected void initChannel(Channel ch) {
-            ch.pipeline().addLast(new StringEncoder());
-        }
-    })
-    .connect("127.0.0.1", 8080);
+下面有两个解决办法：
 
-System.out.println(channelFuture.channel()); // 1
-channelFuture.sync(); // 2
-System.out.println(channelFuture.channel()); // 3
-```
-
-* 执行到 1 时，连接未建立，打印 `[id: 0x2e1884dd]`
-* 执行到 2 时，sync 方法是同步等待连接建立完成
-* 执行到 3 时，连接肯定建立了，打印 `[id: 0x2e1884dd, L:/127.0.0.1:57191 - R:/127.0.0.1:8080]`
-
-除了用 sync 方法可以让异步操作同步以外，还可以使用回调的方式：
+- 使用 sync() 方法同步处理结果，所谓同步就是主线程在异步建立连接的线程还未建立成功时先阻塞住，等成功了再往下运行
+- 使用adListener(回调对象)方法异步处理结果，所谓异步就是主线程不管异步建立连接的线程就一直往下运行，那么建立连接后的操作就写在 addListener() 方法中的函数式接口的回调方法 `operationComplete()` 里（可以用Lambda表达式）
 
 ```java
-ChannelFuture channelFuture = new Bootstrap()
-    .group(new NioEventLoopGroup())
-    .channel(NioSocketChannel.class)
-    .handler(new ChannelInitializer<Channel>() {
-        @Override
-        protected void initChannel(Channel ch) {
-            ch.pipeline().addLast(new StringEncoder());
-        }
-    })
-    .connect("127.0.0.1", 8080);
-System.out.println(channelFuture.channel()); // 1
-channelFuture.addListener((ChannelFutureListener) future -> {
-    System.out.println(future.channel()); // 2
-});
-```
+/**
+ * @Author Maybe
+ * Date on 2022/1/12  13:28
+ */
+@Slf4j
+public class TestChannelFuture {
+    public static void main(String[] args) throws InterruptedException {
+        // 2、带有Future、Promise 的类型都是和异步方法厚套使用，用来处理结果
+        ChannelFuture channelFuture = new Bootstrap()
+                .group(new NioEventLoopGroup())
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<NioSocketChannel>() {
+                    @Override// 在连接建立后调用
+                    protected void initChannel(NioSocketChannel channel) throws Exception {
+                        channel.pipeline().addLast(new StringEncoder());
+                    }
+                })
+                // 1、连按到服务器
+                // 异步非阻塞，main 发起了调用，真正执行connect 是nio线程
+                .connect(new InetSocketAddress("localhost", 8080));
+        // 2.1 使用 sync() 方法同步处理结果
+        /*channelFuture.sync();
+        Channel channel = channelFuture.channel();
+        log.debug("{}", channel);
+        channel.writeAndFlush("hello world");*/
 
-* 执行到 1 时，连接未建立，打印 `[id: 0x749124ba]`
-* ChannelFutureListener 会在连接建立时被调用（其中 operationComplete 方法），因此执行到 2 时，连接肯定建立了，打印 `[id: 0x749124ba, L:/127.0.0.1:57351 - R:/127.0.0.1:8080]`
+        // 2.2 使用adListener(回调对象)方法异步处理结果
+        /*channelFuture.addListener(new ChannelFutureListener() {
+            //在 nio 线程连接建立好之后，会调用 operationComplete() 方法完成后面的操作
+            @Override
+            public void operationComplete(ChannelFuture channelFuture) throws Exception {
+                channelFuture.sync();
+                Channel channel = channelFuture.channel();
+                log.debug("{}", channel);
+                channel.writeAndFlush("hello world");
+            }
+        });*/
+		// 使用Lambda表达式
+        channelFuture.addListener((ChannelFutureListener) channelFuture1 -> {
+            channelFuture1.sync();
+            Channel channel = channelFuture1.channel();
+            log.debug("{}", channel);
+            channel.writeAndFlush("hello world");
+        });
+    }
+}
+```
 
 
 
 #### CloseFuture
 
+用于对ChannelFuture的关闭
+
 ```java
+/**
+ * @Author Maybe
+ * Date on 2022/1/12  15:22
+ */
 @Slf4j
-public class CloseFutureClient {
+public class TestCloseFuture {
     public static void main(String[] args) throws InterruptedException {
-        NioEventLoopGroup group new NioEventLoopGroup();
+        NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
         ChannelFuture channelFuture = new Bootstrap()
-                .group(group)
+                .group(nioEventLoopGroup)
                 .channel(NioSocketChannel.class)
                 .handler(new ChannelInitializer<NioSocketChannel>() {
-                    @Override // 在连接建立后被调用
-                    protected void initChannel(NioSocketChannel ch) throws Exception {
-                        ch.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));
-                        ch.pipeline().addLast(new StringEncoder());
+                    @Override
+                    protected void initChannel(NioSocketChannel channel) throws Exception {
+                        channel.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));
+                        channel.pipeline().addLast(new StringEncoder());
                     }
                 })
                 .connect(new InetSocketAddress("localhost", 8080));
@@ -586,7 +603,7 @@ public class CloseFutureClient {
             while (true) {
                 String line = scanner.nextLine();
                 if ("q".equals(line)) {
-                    channel.close(); // close 异步操作 1s 之后
+                    channel.close(); // close 也是异步线程在操作
 //                    log.debug("处理关闭之后的操作"); // 不能在这里善后
                     break;
                 }
@@ -599,12 +616,11 @@ public class CloseFutureClient {
         /*log.debug("waiting close...");
         closeFuture.sync();
         log.debug("处理关闭之后的操作");*/
-        closeFuture.addListener(new ChannelFutureListener() {
-            @Override
-            public void operationComplete(ChannelFuture future) throws Exception {
-                log.debug("处理关闭之后的操作");
-                group.shutdownGracefully();
-            }
+        closeFuture.addListener((ChannelFutureListener) channelFuture1 -> {
+            log.debug("处理关闭之后的操作");
+            // 用于关闭整个客户端，也就是NioEventLoopGroup，它会等待
+            // NioEventLoopGroup里的线程都结束再将NioEventLoopGroup关闭
+            nioEventLoopGroup.shutdownGracefully();
         });
     }
 }
@@ -616,11 +632,9 @@ public class CloseFutureClient {
 
 #### 💡 异步提升的是什么
 
-* 有些同学看到这里会有疑问：为什么不在一个线程中去执行建立连接、去执行关闭 channel，那样不是也可以吗？非要用这么复杂的异步方式：比如一个线程发起建立连接，另一个线程去真正建立连接
+* 有些人看到这里会有疑问：为什么不在一个线程中去执行建立连接、去执行关闭 channel，那样不是也可以吗？非要用这么复杂的异步方式：比如一个线程发起建立连接，另一个线程去真正建立连接
 
-* 还有同学会笼统地回答，因为 netty 异步方式用了多线程、多线程就效率高。其实这些认识都比较片面，多线程和异步所提升的效率并不是所认为的
-
-
+* 还有人会笼统地回答，因为 netty 异步方式用了多线程、多线程就效率高。其实这些认识都比较片面，多线程和异步所提升的效率并不是所认为的
 
 
 
@@ -644,6 +658,7 @@ public class CloseFutureClient {
 
 * 单线程没法异步提高效率，必须配合多线程、多核 cpu 才能发挥异步的优势
 * 异步并没有缩短响应时间，反而有所增加
+* Netty提升的是单位时间内请求的吞吐量
 * 合理进行任务拆分，也是利用异步的关键
 
 
@@ -672,6 +687,63 @@ public class CloseFutureClient {
 | addLinstener | -                              | 添加回调，异步接收结果                                       | -            |
 | setSuccess   | -                              | -                                                            | 设置成功结果 |
 | setFailure   | -                              | -                                                            | 设置失败结果 |
+
+#### JDK Future示例
+
+```java
+/**
+ * @Author Maybe
+ * Date on 2022/1/12  20:08
+ */
+@Slf4j
+public class TestJDKFuture {
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        // 1.线程池
+        ExecutorService service = Executors.newFixedThreadPool(2);
+        // 2.提交任务
+        Future<Integer> future = service.submit((Callable<Integer>) () -> {
+            log.debug("执行计算{}");
+            Thread.sleep(1000);
+            return 50;
+        });
+        // 3.主线程通过future来获取结果
+        log.debug("等待结果");
+        Integer integer = future.get();// 这是个同步阻塞方法
+        log.debug("结果是{}", integer);
+    }
+}
+```
+
+#### Netty Future示例
+
+```java
+/**
+ * @Author Maybe
+ * Date on 2022/1/12  20:20
+ */
+@Slf4j
+public class TestNettyFuture {
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        EventLoop eventLoop = group.next();
+        Future<Integer> future = eventLoop.submit((Callable<Integer>) () -> {
+            log.debug("执行计算");
+            Thread.sleep(1000);
+            return 50;
+        });
+        // 3.主线程通过future来获取结果
+        /*log.debug("等待结果");
+        Integer integer = future.get();// 这是个同步阻塞方法
+        log.debug("结果是{}", integer);*/
+
+        // 也可以用异步的
+        log.debug("等待结果");
+        future.addListener(future1 -> {
+            log.debug("结果是{}", future.getNow());
+        });
+    }
+}
+```
 
 
 
@@ -747,22 +819,22 @@ log.debug("start...");
 
 ```java
 DefaultEventLoop eventExecutors = new DefaultEventLoop();
-        DefaultPromise<Integer> promise = new DefaultPromise<>(eventExecutors);
+DefaultPromise<Integer> promise = new DefaultPromise<>(eventExecutors);
 
-        eventExecutors.execute(() -> {
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            RuntimeException e = new RuntimeException("error...");
-            log.debug("set failure, {}", e.toString());
-            promise.setFailure(e);
-        });
+eventExecutors.execute(() -> {
+    try {
+        Thread.sleep(1000);
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    RuntimeException e = new RuntimeException("error...");
+    log.debug("set failure, {}", e.toString());
+    promise.setFailure(e);
+});
 
-        log.debug("start...");
-        log.debug("{}", promise.getNow());
-        promise.get(); // sync() 也会出现异常，只是 get 会再用 ExecutionException 包一层异常
+log.debug("start...");
+log.debug("{}", promise.getNow());
+promise.get(); // sync() 也会出现异常，只是 get 会再用 ExecutionException 包一层异常
 ```
 
 输出
