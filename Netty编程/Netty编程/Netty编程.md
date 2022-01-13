@@ -1004,113 +1004,178 @@ ChannelHandler 用来处理 Channel 上的各种事件，分为入站、出站�
 先搞清楚顺序，服务端
 
 ```java
-new ServerBootstrap()
-    .group(new NioEventLoopGroup())
-    .channel(NioServerSocketChannel.class)
-    .childHandler(new ChannelInitializer<NioSocketChannel>() {
-        protected void initChannel(NioSocketChannel ch) {
-            ch.pipeline().addLast(new ChannelInboundHandlerAdapter(){
-                @Override
-                public void channelRead(ChannelHandlerContext ctx, Object msg) {
-                    System.out.println(1);
-                    ctx.fireChannelRead(msg); // 1
-                }
-            });
-            ch.pipeline().addLast(new ChannelInboundHandlerAdapter(){
-                @Override
-                public void channelRead(ChannelHandlerContext ctx, Object msg) {
-                    System.out.println(2);
-                    ctx.fireChannelRead(msg); // 2
-                }
-            });
-            ch.pipeline().addLast(new ChannelInboundHandlerAdapter(){
-                @Override
-                public void channelRead(ChannelHandlerContext ctx, Object msg) {
-                    System.out.println(3);
-                    ctx.channel().write(msg); // 3
-                }
-            });
-            ch.pipeline().addLast(new ChannelOutboundHandlerAdapter(){
-                @Override
-                public void write(ChannelHandlerContext ctx, Object msg, 
-                                  ChannelPromise promise) {
-                    System.out.println(4);
-                    ctx.write(msg, promise); // 4
-                }
-            });
-            ch.pipeline().addLast(new ChannelOutboundHandlerAdapter(){
-                @Override
-                public void write(ChannelHandlerContext ctx, Object msg, 
-                                  ChannelPromise promise) {
-                    System.out.println(5);
-                    ctx.write(msg, promise); // 5
-                }
-            });
-            ch.pipeline().addLast(new ChannelOutboundHandlerAdapter(){
-                @Override
-                public void write(ChannelHandlerContext ctx, Object msg, 
-                                  ChannelPromise promise) {
-                    System.out.println(6);
-                    ctx.write(msg, promise); // 6
-                }
-            });
-        }
-    })
-    .bind(8080);
+/**
+ * @Author Maybe
+ * Date on 2022/1/13  14:28
+ */
+@Slf4j
+public class TestHandlerPipeline {
+    public static void main(String[] args) {
+        handlerAndPipeline();
+    }
+
+    private static void handlerAndPipeline() {
+        new ServerBootstrap()
+                .group(new NioEventLoopGroup())
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<NioSocketChannel>() {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg)
+                                    throws Exception {
+                                log.debug("第一个handler");
+                                ByteBuf byteBuf = (ByteBuf) msg;
+                                String name = byteBuf.toString(StandardCharsets.UTF_8) + "2";
+                                // channelRead()点进去一看其实就是ctx.fireChannelRead(msg);
+                                // 传递给下一个handler
+                                super.channelRead(ctx, name);
+                            }
+                        });
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg)
+                                    throws Exception {
+                                log.debug("第二个handler结果为 {}", msg);
+//                                super.channelRead(ctx, msg);
+                                // 这里就没必要再往下传了，因为已经没有入站的handler了
+                                ch.writeAndFlush(msg);
+                            }
+                        });
+                        //出站Handler必须要channel里面有数据才会触发，不然就形同虚设
+                        ch.pipeline().addLast(new ChannelOutboundHandlerAdapter() {
+                            @Override
+                            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                                    throws Exception {
+                                log.debug("3");
+                                super.write(ctx, msg, promise);
+                            }
+                        });
+                        ch.pipeline().addLast(new ChannelOutboundHandlerAdapter() {
+                            @Override
+                            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                                    throws Exception {
+                                log.debug("4");
+                                super.write(ctx, msg, promise);
+                            }
+                        });
+                    }
+                })
+                .bind(8080);
+    }
+}
 ```
 
 客户端
 
 ```java
-new Bootstrap()
-    .group(new NioEventLoopGroup())
-    .channel(NioSocketChannel.class)
-    .handler(new ChannelInitializer<Channel>() {
-        @Override
-        protected void initChannel(Channel ch) {
-            ch.pipeline().addLast(new StringEncoder());
-        }
-    })
-    .connect("127.0.0.1", 8080)
-    .addListener((ChannelFutureListener) future -> {
-        future.channel().writeAndFlush("hello,world");
-    });
+/**
+ * @Author Maybe
+ * Date on 2022/1/13  14:53
+ */
+
+public class Client {
+    public static void main(String[] args) {
+        new Bootstrap()
+                .group(new NioEventLoopGroup())
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<Channel>() {
+                    @Override
+                    protected void initChannel(Channel ch) {
+                        ch.pipeline().addLast(new StringEncoder());
+                    }
+                })
+                .connect("127.0.0.1", 8080)
+                .addListener((ChannelFutureListener) future -> {
+                    future.channel().writeAndFlush("hello,world");
+                });
+    }
+}
 ```
 
 服务器端打印：
 
 ```
-1
-2
-3
-6
-5
-4
+15:03:16.498 [nioEventLoopGroup-2-2] DEBUG com.eagle.netty.TestHandlerPipeline - 第一个handler
+15:03:16.499 [nioEventLoopGroup-2-2] DEBUG com.eagle.netty.TestHandlerPipeline - 第二个handler结果为 hello,world2
+15:03:16.499 [nioEventLoopGroup-2-2] DEBUG com.eagle.netty.TestHandlerPipeline - 4
+15:03:16.499 [nioEventLoopGroup-2-2] DEBUG com.eagle.netty.TestHandlerPipeline - 3
 ```
 
 可以看到，ChannelInboundHandlerAdapter 是按照 addLast 的顺序执行的，而 ChannelOutboundHandlerAdapter 是按照 addLast 的逆序执行的。ChannelPipeline 的实现是一个 ChannelHandlerContext（包装了 ChannelHandler） 组成的双向链表
 
 <img src="img(Netty编程)/0008.png" style="zoom:80%;" />
 
-* 入站处理器中，ctx.fireChannelRead(msg) 是 **调用下一个入站处理器**
-  * 如果注释掉 1 处代码，则仅会打印 1
-  * 如果注释掉 2 处代码，则仅会打印 1 2
-* 3 处的 ctx.channel().write(msg) 会 **从尾部开始触发** 后续出站处理器的执行
-  * 如果注释掉 3 处代码，则仅会打印 1 2 3
+* 入站处理器中，super.channelRead(ctx, name); 是 **调用下一个入站处理器**
+  * 如果注释掉该代码，则仅会打印 "第一个handler"
+* 第二个handler的 ch.writeAndFlush(msg); 会 **从尾部开始触发** 后续出站处理器的执行
+  * 如果注释掉最后一个handler的写方法，则仅会打印前面两个入站处理器的信息
 * 类似的，出站处理器中，ctx.write(msg, promise) 的调用也会 **触发上一个出站处理器**
-  * 如果注释掉 6 处代码，则仅会打印 1 2 3 6
-* ctx.channel().write(msg) vs ctx.write(msg)
+  * 如果注释掉该代码，则也不会连着调用下一个出站handler
+* **ctx.channel().write(msg)** 和 **ctx.write(msg)** 的区别：
   * 都是触发出站处理器的执行
-  * ctx.channel().write(msg) 从尾部开始查找出站处理器
-  * ctx.write(msg) 是从当前节点找上一个出站处理器
-  * 3 处的 ctx.channel().write(msg) 如果改为 ctx.write(msg) 仅会打印 1 2 3，因为节点3 之前没有其它出站处理器了
-  * 6 处的 ctx.write(msg, promise) 如果改为 ctx.channel().write(msg) 会打印 1 2 3 6 6 6... 因为 ctx.channel().write() 是从尾部开始查找，结果又是节点6 自己
+  * **ctx.channel().write(msg) 从尾部开始查找出站处理器**
+  * **ctx.write(msg) 是从当前节点找上一个出站处理器**
 
 
 
-图1 - 服务端 pipeline 触发的原始流程，图中数字代表了处理步骤的先后次序
+服务端 pipeline 触发的原始流程，图中数字代表了处理步骤的先后次序
 
 <img src="img(Netty编程)/0009.png" style="zoom:80%;" />
+
+#### EmbeddedChannel模拟调试工具
+
+是Netty自带的一个Handler调试工具
+
+```java
+/**
+ * @Author Maybe
+ * Date on 2022/1/13  15:23
+ */
+@Slf4j
+public class TestEmbeddedChannel {
+    public static void main(String[] args) {
+        ChannelInboundHandlerAdapter h1 = new ChannelInboundHandlerAdapter() {
+            @Override
+            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                log.debug("InboundHandler 1");
+                super.channelRead(ctx, msg);
+            }
+        };
+        ChannelInboundHandlerAdapter h2 = new ChannelInboundHandlerAdapter() {
+            @Override
+            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                log.debug("InboundHandler 2");
+                super.channelRead(ctx, msg);
+            }
+        };
+        ChannelOutboundHandlerAdapter h3 = new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                    throws Exception {
+                log.debug("OutboundHandler 3");
+                super.write(ctx, msg, promise);
+            }
+        };
+        ChannelOutboundHandlerAdapter h4 = new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                    throws Exception {
+                log.debug("OutboundHandler 4");
+                super.write(ctx, msg, promise);
+            }
+        };
+        EmbeddedChannel embeddedChannel = new EmbeddedChannel(h1, h2, h3, h4);
+        // 模拟入站操作
+        embeddedChannel.writeInbound(ByteBufAllocator.DEFAULT.buffer()
+                .writeBytes("hello".getBytes(StandardCharsets.UTF_8)));
+        // 模拟出站操作
+        embeddedChannel.writeOutbound(ByteBufAllocator.DEFAULT.buffer()
+                .writeBytes("world".getBytes(StandardCharsets.UTF_8)));
+    }
+}
+```
 
 
 
@@ -1280,7 +1345,7 @@ log(buffer);
 扩容规则是
 
 * 如何写入后数据大小未超过 512，则选择下一个 16 的整数倍，例如写入后大小为 12 ，则扩容后 capacity 是 16
-* 如果写入后数据大小超过 512，则选择下一个 2^n，例如写入后大小为 513，则扩容后 capacity 是 2^10=1024（2^9=512 已经不够了）
+* 如果写入后数据大小超过 512，则选择下一个 2^n，例如写入后大小为 513，则扩容后 capacity 是 `2^10=1024`（2^9=512 已经不够了）
 * 扩容不能超过 max capacity 会报错
 
 结果是
@@ -1794,11 +1859,7 @@ new Thread(() -> {
 
 ### 💡 读和写的误解
 
-
-
-我最初在认识上有这样的误区，认为只有在 netty，nio 这样的多路复用 IO 模型时，读写才不会相互阻塞，才可以实现高效的双向通信，但实际上，Java Socket 是全双工的：在任意时刻，线路上存在`A 到 B` 和 `B 到 A` 的双向信号传输。即使是阻塞 IO，读和写是可以同时进行的，只要分别采用读线程和写线程即可，读不会阻塞写、写也不会阻塞读
-
-
+我最初在认识上有这样的误区，认为只有在 netty，nio 这样的多路复用 IO 模型时，读写才不会相互阻塞，才可以实现高效的双向通信，但实际上，**Java Socket 是全双工的**：在任意时刻，线路上存在`A 到 B` 和 `B 到 A` 的双向信号传输。即使是阻塞 IO，读和写是可以同时进行的，只要分别采用读线程和写线程即可，读不会阻塞写、写也不会阻塞读
 
 例如
 
