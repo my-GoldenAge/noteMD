@@ -2124,8 +2124,8 @@ serverBootstrap.option(ChannelOption.SO_RCVBUF, 10);
 * 现象，发送 abc def，接收 abcdef
 * 原因
   * 应用层：接收方 ByteBuf 设置太大（Netty 默认 1024）
-  * 滑动窗口：假设发送方 256 bytes 表示一个完整报文，但由于接收方处理不及时且窗口大小足够大，这 256 bytes 字节就会缓冲在接收方的滑动窗口中，当滑动窗口中缓冲了多个报文就会粘包
-  * Nagle 算法：会造成粘包
+  * 滑动窗口（TCP）：假设发送方 256 bytes 表示一个完整报文，但由于接收方处理不及时且窗口大小足够大，这 256 bytes 字节就会缓冲在接收方的滑动窗口中，当滑动窗口中缓冲了多个报文就会粘包
+  * Nagle 算法：会造成粘包，所谓Nagle算法就是，有些时候发送的数据太少，而报文的大小远超过要发送的数据大小，Nagle算法就会将一些小的数据积攒在一起发送，提高效率。
 
 半包
 
@@ -2574,154 +2574,41 @@ public class HelloWorldClient {
 ch.pipeline().addLast(new LengthFieldBasedFrameDecoder(1024, 0, 1, 0, 1));
 ```
 
-客户端代码
+通过后面四个参数可以灵活调整预先的长度
 
 ```java
-public class HelloWorldClient {
-    static final Logger log = LoggerFactory.getLogger(HelloWorldClient.class);
+/**
+ * @Author Maybe
+ * Date on 2022/1/17  20:02
+ */
 
+public class TestLengthFieldDecode {
     public static void main(String[] args) {
-        NioEventLoopGroup worker = new NioEventLoopGroup();
-        try {
-            Bootstrap bootstrap = new Bootstrap();
-            bootstrap.channel(NioSocketChannel.class);
-            bootstrap.group(worker);
-            bootstrap.handler(new ChannelInitializer<SocketChannel>() {
-                @Override
-                protected void initChannel(SocketChannel ch) throws Exception {
-                    log.debug("connetted...");
-                    ch.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));
-                    ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
-                        @Override
-                        public void channelActive(ChannelHandlerContext ctx) throws Exception {
-                            log.debug("sending...");
-                            Random r = new Random();
-                            char c = 'a';
-                            ByteBuf buffer = ctx.alloc().buffer();
-                            for (int i = 0; i < 10; i++) {
-                                byte length = (byte) (r.nextInt(16) + 1);
-                                // 先写入长度
-                                buffer.writeByte(length);
-                                // 再
-                                for (int j = 1; j <= length; j++) {
-                                    buffer.writeByte((byte) c);
-                                }
-                                c++;
-                            }
-                            ctx.writeAndFlush(buffer);
-                        }
-                    });
-                }
-            });
-            ChannelFuture channelFuture = bootstrap.connect("192.168.0.103", 9090).sync();
-            channelFuture.channel().closeFuture().sync();
+        EmbeddedChannel embeddedChannel = new EmbeddedChannel(
+                /**
+                 * lengthFieldOffset 长度字段偏移
+                 * lengthFieldLength 长度占用字节
+                 * lengthAdjustment 以长度字节为基准，还有几个字节到内容
+                 * initialBytesToStrip 从头开始剥离字节数
+                 */
+                new LengthFieldBasedFrameDecoder(
+                        1024, 0, 4, 0, 4),
+                new LoggingHandler(LogLevel.DEBUG)
+        );
+        
+        ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer();
+        buffWrite(buffer, "Hello, world");
+        buffWrite(buffer, "hi!!!");
+        embeddedChannel.writeInbound(buffer);
+    }
 
-        } catch (InterruptedException e) {
-            log.error("client error", e);
-        } finally {
-            worker.shutdownGracefully();
-        }
+    private static void buffWrite(ByteBuf buffer, String content) {
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        int length = bytes.length;
+        buffer.writeInt(length);
+        buffer.writeBytes(buffer);
     }
 }
-```
-
-
-
-客户端输出
-
-```
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] c.i.n.HelloWorldClient - connetted...
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] i.n.h.l.LoggingHandler - [id: 0xf0f347b8] REGISTERED
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] i.n.h.l.LoggingHandler - [id: 0xf0f347b8] CONNECT: /192.168.0.103:9090
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] i.n.h.l.LoggingHandler - [id: 0xf0f347b8, L:/192.168.0.103:49979 - R:/192.168.0.103:9090] ACTIVE
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] c.i.n.HelloWorldClient - sending...
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] i.n.h.l.LoggingHandler - [id: 0xf0f347b8, L:/192.168.0.103:49979 - R:/192.168.0.103:9090] WRITE: 97B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 09 61 61 61 61 61 61 61 61 61 09 62 62 62 62 62 |.aaaaaaaaa.bbbbb|
-|00000010| 62 62 62 62 06 63 63 63 63 63 63 08 64 64 64 64 |bbbb.cccccc.dddd|
-|00000020| 64 64 64 64 0f 65 65 65 65 65 65 65 65 65 65 65 |dddd.eeeeeeeeeee|
-|00000030| 65 65 65 65 0d 66 66 66 66 66 66 66 66 66 66 66 |eeee.fffffffffff|
-|00000040| 66 66 02 67 67 02 68 68 0e 69 69 69 69 69 69 69 |ff.gg.hh.iiiiiii|
-|00000050| 69 69 69 69 69 69 69 09 6a 6a 6a 6a 6a 6a 6a 6a |iiiiiii.jjjjjjjj|
-|00000060| 6a                                              |j               |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-2-1] i.n.h.l.LoggingHandler - [id: 0xf0f347b8, L:/192.168.0.103:49979 - R:/192.168.0.103:9090] FLUSH
-```
-
-
-
-服务端输出
-
-```
-14:36:50 [DEBUG] [main] c.i.n.HelloWorldServer - [id: 0xdff439d3] binding...
-14:36:51 [DEBUG] [main] c.i.n.HelloWorldServer - [id: 0xdff439d3, L:/192.168.0.103:9090] bound...
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] REGISTERED
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] ACTIVE
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] c.i.n.HelloWorldServer - connected [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979]
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 9B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 61 61 61 61 61 61 61 61 61                      |aaaaaaaaa       |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 9B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 62 62 62 62 62 62 62 62 62                      |bbbbbbbbb       |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 6B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 63 63 63 63 63 63                               |cccccc          |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 8B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 64 64 64 64 64 64 64 64                         |dddddddd        |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 15B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 65 65 65 65 65 65 65 65 65 65 65 65 65 65 65    |eeeeeeeeeeeeeee |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 13B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 66 66 66 66 66 66 66 66 66 66 66 66 66          |fffffffffffff   |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 2B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 67 67                                           |gg              |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 2B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 68 68                                           |hh              |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 14B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 69 69 69 69 69 69 69 69 69 69 69 69 69 69       |iiiiiiiiiiiiii  |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ: 9B
-         +-------------------------------------------------+
-         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
-+--------+-------------------------------------------------+----------------+
-|00000000| 6a 6a 6a 6a 6a 6a 6a 6a 6a                      |jjjjjjjjj       |
-+--------+-------------------------------------------------+----------------+
-14:37:10 [DEBUG] [nioEventLoopGroup-3-1] i.n.h.l.LoggingHandler - [id: 0x744f2b47, L:/192.168.0.103:9090 - R:/192.168.0.103:49979] READ COMPLETE
-
 ```
 
 
