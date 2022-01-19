@@ -2756,9 +2756,12 @@ try {
         @Override
         protected void initChannel(SocketChannel ch) throws Exception {
             ch.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));
+            //HttpServerCodec既是入站也是出站处理器
+            //入站处理器接收请求（请求头、请求体等），出站处理器将请求变为byte数组响应请求
             ch.pipeline().addLast(new HttpServerCodec());
             ch.pipeline().addLast(new SimpleChannelInboundHandler<HttpRequest>() {
                 @Override
+                //这里的 msg 无论是GET或POST请求，都包含请求头和请求体
                 protected void channelRead0(ChannelHandlerContext ctx, HttpRequest msg) throws Exception {
                     // 获取请求
                     log.debug(msg.uri());
@@ -2769,7 +2772,7 @@ try {
 
                     byte[] bytes = "<h1>Hello, world!</h1>".getBytes();
 
-                    response.headers().setInt(CONTENT_LENGTH, bytes.length);
+                    response.headers().setInt(CONTENT_LENGTH, bytes.length);//不加请求体的长度的话浏览器会一直转圈
                     response.content().writeBytes(bytes);
 
                     // 写回响应
