@@ -42,11 +42,11 @@ GitHub : https://github.com/spring-projects
 
 > **组成**
 
-<img src="Spring.assets/640.webp" alt="图片" style="zoom: 80%;" />
+<img src="img(Spring)/640.webp" alt="图片" style="zoom: 80%;" />
 
 Spring 框架是一个分层架构，由 7 个定义良好的模块组成。Spring 模块构建在核心容器之上，核心容器定义了创建、配置和管理 bean 的方式 .
 
-<img src="Spring.assets/640-1638623859670150.webp" alt="图片" style="zoom:80%;" />
+<img src="img(Spring)/640-1638623859670150.webp" alt="图片" style="zoom:80%;" />
 
 组成 Spring 框架的每个模块（或组件）都可以单独存在，或者与其他一个或多个模块联合实现。每个模块的功能如下：
 
@@ -70,7 +70,7 @@ Spring 框架是一个分层架构，由 7 个定义良好的模块组成。Spri
 - Spring Boot使用了约束优于配置的理念，很多集成方案已经帮你选择好了，能不配置就不配置 , Spring Cloud很大的一部分是基于Spring Boot来实现，Spring Boot可以离开Spring Cloud独立使用开发项目，但是Spring Cloud离不开Spring Boot，属于依赖的关系。
 - SpringBoot在SpringClound中起到了承上启下的作用，如果你要学习SpringCloud必须要学习SpringBoot。
 
-<img src="Spring.assets/640-1638623863844152.webp" alt="图片" style="zoom:80%;" />
+<img src="img(Spring)/640-1638623863844152.webp" alt="图片" style="zoom:80%;" />
 
 ## IOC理论推导
 
@@ -92,13 +92,13 @@ Spring 框架是一个分层架构，由 7 个定义良好的模块组成。Spri
 
 **控制反转IoC(Inversion of Control)，是一种设计思想，DI(依赖注入)是实现IoC的一种方法**，也有人认为DI只是IoC的另一种说法。没有IoC的程序中 , 我们使用面向对象编程 , 对象的创建与对象间的依赖关系完全硬编码在程序中，对象的创建由程序自己控制，控制反转后将对象的创建转移给第三方，个人认为所谓控制反转就是：获得依赖对象的方式反转了。
 
-<img src="Spring.assets/640-1638623867524154.webp" alt="图片" style="zoom:80%;" />
+<img src="img(Spring)/640-1638623867524154.webp" alt="图片" style="zoom:80%;" />
 
 **IoC是Spring框架的核心内容**，使用多种方式完美的实现了IoC，可以使用XML配置，也可以使用注解，新版本的Spring也可以零配置实现IoC。
 
 Spring容器在初始化时先读取配置文件，根据配置文件或元数据创建与组织对象存入容器中，程序使用时再从Ioc容器中取出需要的对象。
 
-![图片](Spring.assets/640-1638623869593156.webp)
+<img src="img(Spring)/640-1638623869593156.webp" alt="图片" style="zoom:80%;" />
 
 采用XML方式配置Bean的时候，Bean的定义信息是和实现分离的，而采用注解的方式可以把两者合为一体，Bean的定义信息直接以注解的形式定义在实现类中，从而达到了零配置的目的。
 
@@ -489,7 +489,7 @@ class是bean的全限定名=包名+类名
 
 测试结果：
 
-![图片](Spring.assets/640-1638623882225158.webp)
+![图片](img(Spring)/640-1638623882225158.webp)
 
 # Bean的作用域
 
@@ -497,7 +497,7 @@ class是bean的全限定名=包名+类名
 
 在Spring中，那些组成应用程序的主体及由Spring IoC容器所管理的对象，被称之为bean。简单地讲，bean就是由IoC容器初始化、装配及管理的对象 .
 
-![图片](Spring.assets/640-1638623884061160.webp)
+![图片](img(Spring)/640-1638623884061160.webp)
 
 几种作用域中，request、session作用域仅在基于web的应用中使用（不必关心你所采用的是什么web应用框架），只能用在基于web的Spring ApplicationContext环境。
 
@@ -895,7 +895,7 @@ private Dog dog;
 
 在spring4之后，想要使用注解形式，必须得要引入aop的包
 
-![图片](Spring.assets/640-1638623895893162.webp)
+![图片](img(Spring)/640-1638623895893162.webp)
 
 在配置文件当中，还得要引入一个context约束
 
@@ -1055,7 +1055,7 @@ JavaConfig 原来是 Spring 的一个子项目，它通过 Java 类的方式提�
 实体类
 
 ```java
-//这见这个注解的意思，就是说明这个类被Spring接管了，注珊到了容器中
+//这个注解的意思，就是说明这个类被Spring接管了，注珊到了容器中
 @Component
 pub1ic class User {
 	private String name;
@@ -1079,20 +1079,20 @@ pub1ic class User {
 配置类
 
 ```java
-// 这个也会Spring容器托管， 注册到容器中，因为他本来就是一个@Component
-// @Configuration代表这是一 个配置类，就和我们之前看的beans.xml一样
+// 这个也会Spring容器托管，注册到容器中，因为他本来就是一个@Component
+// @Configuration代表这是一个配置类，就和我们之前看的beans.xml一样
 @Configuration
 @ComponentScan("com. kuang.pojo")
 //@ComponentScan就是相当于xml中扫描某一区域的标签，使用之后就可以直接用注解到具体类上进行装配
 public class KuangConfig {
 
-	//注册一个bean ，就相当于我们之前写的一个bean 标签
-	//这个方法的名字，就相当Fbean标签中的d属性
-	//这个方法的返回值，就相当Fbean标签中的class属性
-	@Bean//通过方法注册一个bean，这里的返回值就Bean的类型，方法名就是bean的id！
-	public User user(){
-		return new User(); //就是返回要注入到bean的对象!
-	}
+    //注册一个bean，就相当于我们之前写的一个bean 标签
+    //这个方法的名字，就相当bean标签中的id属性
+    //这个方法的返回值，就相当bean标签中的class属性
+    @Bean//通过方法注册一个bean，这里的返回值就Bean的类型，方法名就是bean的id！
+    public User user(){
+        return new User(); //就是返回要注入到bean的对象!
+    }
 }
 ```
 
@@ -1100,13 +1100,13 @@ public class KuangConfig {
 
 ```java
 pub1ic class MyTest {
-	pub1ic static void main(String[] args) {
-	//如果完全使用了配置类方式去做，我们就只能通过AnnotationConfig 上下文来获取容器， 通过配置类的class对象加载!
-		Applicati onContext context = new
-			Annotati onConfi gApp1 icati onContext (KuangConfig.class);
-		user getuser = (User) context. getBean("user");
-		System. out. print1n (getuser . getName());
-	}
+    pub1ic static void main(String[] args) {
+        //如果完全使用了配置类方式去做，我们就只能通过 AnnotationConfig 上下文来获取容器，通过配置类的class对象加载!
+        ApplicationContext context = new
+            AnnotationConfigApp1icationContext (KuangConfig.class);
+        User user = (User) context.getBean("user");
+        System.out.print1n(user.getName());
+    }
 }
 ```
 
@@ -1145,7 +1145,7 @@ public class MyConfig {
 
 【InvocationHandler：调用处理程序】
 
-> public interface **Invoc ationHandler**
+> public interface **InvocationHandler**
 > InvocationHandler是由代理实例的调用处理程序实现的接口。
 > 每个代理实例都有一个关联的调用处理程序。当在代理实例上调用方法时，方法调用将被编码并分派到其调用处理程序的invoke方法
 
@@ -1166,7 +1166,7 @@ Object invoke(Object proxy, Method method, Object[] args)；
 
 > 动态代理类(以下简称为代理类)是一个实现在类创建时在运行时指定的接口列表的类，具有如下所述的行为。代理楼P是由代理类实现的接口。代理实例是代理类的一个实例。每个代理实例都有一个关联的调用处理程序对象，它实现了接口InvocationHandler。通过其代理接口之一的代理实例上的方法调用将被分派到实例调用处理程序的invoke方法，传递代理实例，java. lang. reflect .Method被调用方法的java. lang. reflect.Method对象以及包含参数的类型0bject object的数组。调用处理程序适当地处理编码方法调用,并且返回的结果将作为方法在代理实例上调用的结果返回。
 
-![图片](Spring.assets/640-1638623908609164.webp)
+<img src="img(Spring)/640-1638623908609164-16431800773081.webp" alt="图片" style="zoom:80%;" />
 
 ```java
 //生成代理类
@@ -1321,9 +1321,9 @@ public class Test {
 
 静态代理有的它都有，静态代理没有的，它也有！
 
-- 可以使得我们的真实角色更加纯粹 . 不再去关注一些公共的事情 .
-- 公共的业务由代理来完成 . 实现了业务的分工 ,
-- 公共业务发生扩展时变得更加集中和方便 .
+- 可以使得我们的真实角色更加纯粹，不再去关注一些公共的事情
+- 公共的业务由代理来完成，实现了业务的分工
+- 公共业务发生扩展时变得更加集中和方便
 - 一个动态代理 , 一般代理某一类业务
 - 一个动态代理可以代理多个类，代理的是接口！
 
@@ -1335,7 +1335,7 @@ public class Test {
 
 AOP（Aspect Oriented Programming）意为：面向切面编程，通过预编译方式和运行期动态代理实现程序功能的统一维护的一种技术。AOP是OOP的延续，是软件开发中的一个热点，也是Spring框架中的一个重要内容，是函数式编程的一种衍生范型。利用AOP可以对业务逻辑的各个部分进行隔离，从而使得业务逻辑各部分之间的耦合度降低，提高程序的可重用性，同时提高了开发的效率。
 
-![图片](Spring.assets/640-1638623916979166.webp)
+<img src="img(Spring)/640-1638623916979166.webp" alt="图片" style="zoom:80%;" />
 
 ## AOP在Spring中的作用
 
@@ -1353,7 +1353,7 @@ AOP（Aspect Oriented Programming）意为：面向切面编程，通过预编�
 - 切入点（PointCut）：切面通知 执行的 “地点”的定义。
 - 连接点（JointPoint）：与切入点匹配的执行点。
 
-![图片](Spring.assets/640-1638623919814168.webp)
+<img src="img(Spring)/AOP.jpg" alt="AOP" style="zoom:80%;" />
 
 SpringAOP中，通过Advice定义横切逻辑，Spring中支持5种类型的Advice:
 
@@ -1462,7 +1462,7 @@ public class Log implements MethodBeforeAdvice {
 }
 public class AfterLog implements AfterReturningAdvice {
    //returnValue 返回值
-   //method被调用的方法
+   //method 被调用的方法
    //args 被调用的方法的对象的参数
    //target 被调用的目标对象
    @Override
@@ -1495,7 +1495,7 @@ public class AfterLog implements AfterReturningAdvice {
    <aop:config>
        <!--切入点 expression:表达式匹配要执行的方法-->
        <aop:pointcut id="pointcut" expression="execution(* com.kuang.service.UserServiceImpl.*(..))"/>
-       <!--执行环绕; advice-ref执行方法 . pointcut-ref切入点-->
+       <!--执行环绕; advice-ref执行方法 pointcut-ref切入点-->
        <aop:advisor advice-ref="log" pointcut-ref="pointcut"/>
        <aop:advisor advice-ref="afterLog" pointcut-ref="pointcut"/>
    </aop:config>
@@ -1516,11 +1516,9 @@ public class MyTest {
 }
 ```
 
-Aop的重要性 : 很重要 . 一定要理解其中的思路 , 主要是思想的理解这一块 .
+Aop的重要性 : 很重要，一定要理解其中的思路 , 主要是思想的理解这一块 .
 
-Spring的Aop就是将公共的业务 (日志 , 安全等) 和领域业务结合起来 , 当执行领域业务时 , 将会把公共业务加进来 . 实现公共业务的重复利用 . 领域业务更纯粹 , 程序猿专注领域业务 , 其本质还是动态代理 . 
-
-
+Spring的Aop就是将公共的业务 (日志 , 安全等) 和领域业务结合起来 , 当执行领域业务时 , 将会把公共业务加进来，实现公共业务的重复利用，领域业务更纯粹 , 程序猿专注领域业务 , 其本质还是动态代理
 
 **第二种方式**
 
@@ -1645,19 +1643,16 @@ public void aroundAdvice(ProceedingJoinPoint proceedingJoinPoint){
     }finally {
         System.out.println("最终通知开始记录日志了。。。");
     }
+}
 ```
 
 
 
-aop:aspectj-autoproxy：说明
+**aop:aspectj-autoproxy：说明**
 
-```xml
-通过aop命名空间的<aop:aspectj-autoproxy />声明自动为spring容器中那些配置@aspectJ切面的bean创建代理，织入切面。当然，spring 在内部依旧采用AnnotationAwareAspectJAutoProxyCreator进行自动代理的创建工作，但具体实现的细节已经被
-<aop:aspectj-autoproxy />隐藏起来了
-
-<aop:aspectj-autoproxy />有一个proxy-target-class属性，默认为false，表示使用jdk动态代理织入增强，当配为
-<aop:aspectj-autoproxy  poxy-target-class="true"/>时，表示使用CGLib动态代理技术织入增强。不过即使proxy-target-class设置为false，如果目标类没有声明接口，则spring将自动使用CGLib动态代理。
-```
+- 通过aop命名空间的 `<aop:aspectj-autoproxy/>` 声明自动为spring容器中那些配置 @aspectJ 切面的bean创建代理，织入切面。当然，spring 在内部依旧采用 `AnnotationAwareAspectJAutoProxyCreator` 进行自动代理的创建工作，但具体实现的细节已经被 `<aop:aspectj-autoproxy/>` 隐藏起来了
+- `<aop:aspectj-autoproxy/>` 有一个 `proxy-target-class` 属性，默认为false，表示使用jdk动态代理织入增强，当配为
+  `<aop:aspectj-autoproxy  poxy-target-class="true"/>` 时，表示使用CGLib动态代理技术织入增强。不过即使 `proxy-target-class`设置为false，如果目标类没有声明接口，则spring将自动使用CGLib动态代理。
 
 ### 相同的切入点抽取
 
@@ -1714,7 +1709,7 @@ public class ConfigAop {
 
 1）引入相关 jar 包 
 
-<img src="Spring.assets/image-20210909104251304.png" alt="image-20210909104251304" style="zoom: 80%;" />
+<img src="img(Spring)/image-20210909104251304.png" alt="image-20210909104251304" style="zoom: 80%;" />
 
 2）在 spring 配置文件配置数据库连接池
 
@@ -1963,7 +1958,7 @@ public List<Book> findAllBook() {
 4、在 Spring 进行声明式事务管理，底层使用 AOP 原理
 5、Spring 事务管理 API，提供一个接口，代表事务管理器，这个接口针对不同的框架提供不同的实现类
 
-<img src="Spring.assets/image-20210910084110059.png" alt="image-20210910084110059" style="zoom:80%;" />
+<img src="img(Spring)/image-20210910084110059.png" alt="image-20210910084110059" style="zoom:80%;" />
 
 ### 基于注解声明式事务管理
 
@@ -2020,12 +2015,12 @@ public class UserService {}
 
 在 service 类上面添加注解@Transactional，在这个注解里面可以配置事务相关参数
 
-<img src="Spring.assets/image-20210910093722102.png" alt="image-20210910093722102" style="zoom:80%;" />
+<img src="img(Spring)/image-20210910093722102.png" alt="image-20210910093722102" style="zoom:80%;" />
 
 **1、propagation：事务传播行为**
 多事务方法直接进行调用，这个过程中事务 是如何进行管理的
 
-<img src="Spring.assets/image-20210910094003076.png" alt="image-20210910094003076" style="zoom:80%;" />
+<img src="img(Spring)/image-20210910094003076.png" alt="image-20210910094003076" style="zoom:80%;" />
 
 事务的传播行为可以由传播属性指定。Spring 定义了7种类传播行为。
 
@@ -2045,11 +2040,11 @@ public class UserService {}
 
 **脏读：**一个未提交事务读取到另一个未提交事务的数据（是一定要避免的）
 
-<img src="Spring.assets/image-20210910094809870.png" alt="image-20210910094809870" style="zoom:80%;" />
+<img src="img(Spring)/image-20210910094809870.png" alt="image-20210910094809870" style="zoom:80%;" />
 
 **不可重复读：**一个未提交事务读取到另一提交事务修改数据（属于一种现象）
 
-<img src="Spring.assets/image-20210910094920262.png" alt="image-20210910094920262" style="zoom:80%;" />
+<img src="img(Spring)/image-20210910094920262.png" alt="image-20210910094920262" style="zoom:80%;" />
 
 **虚读：**一个未提交事务读取到另一提交事务添加数据
 
