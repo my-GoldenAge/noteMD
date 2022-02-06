@@ -204,7 +204,7 @@ zookeeper没有启动
 
 <img src="img(dubbo)/image-20220123162150556.png" alt="image-20220123162150556" style="zoom:80%;" />
 
-### Provider
+
 
 这里写两个模块，分别是service模块和web模块，将来web模块依赖于service模块，通过maven的tomcat插件直接启动
 
@@ -395,6 +395,217 @@ Service代码编写，在使用 `@Service` 时使用dubbo的 `@Service` 来标�
 
 最后想要启动service模块还要完善目录结构，将web模块的webapp复制过来，然后删除web.xml中对springmvc的配置即可
 
+### 公共接口的抽离
+
+到此，这两个模块还没有真正做到完全分离，因为都是本地的，所以直接用的maven来依赖，然后用spring自动注入实现调用。
+
+因此，想要实现真正的完全分离，要放弃spring的自动注入，采用**dubbo的一个注解** `@Reference` 来进行远程注入
+
+```java
+//注入Service
+//@Autowired//本地注入
+
+/*
+  1. 从zookeeper注册中心获取userService的访问url
+  2. 进行远程调用RPC
+  3. 将结果封装为一个代理对象。给变量赋值
+ */
+
+@Reference//远程注入
+private UserService userService;
+```
+
+还要对注册中心进行配置：
+
+```xml
+<!--dubbo的配置-->
+<!--1.配置项目的名称,唯一-->
+<dubbo:application name="dubbo-service"/>
+<!--2.配置注册中心的地址-->
+<dubbo:registry address="zookeeper://192.168.149.135:2181"/>
+<!--3.配置dubbo包扫描-->
+<!--这里只要注册需要被调用的类即可-->
+<dubbo:annotation package="com.itheima.service.impl" />
+```
+
+在一般的开发中对于业务service模块，都需要先写个接口用来实现，这里我们可以选择在每个模块中都写一个**一模一样**的service接口，但这明显太蠢了，因此要对公共接口进行抽离，很简单，重写一个module，把公共的接口写进来，再在其他用到这些接口的模块的pom文件中依赖这个接口模块即可。（注意导包）
+
 # Dubbo 高级特性
 
+## 1、dubbo-admin管理平台
+
+<img src="img(dubbo)/image-20220206171832596.png" alt="image-20220206171832596" style="zoom:80%;" />
+
+- dubbo-admin管理平台其实就包括了上图Monitor的功能。
+- dubbo-admin 管理平台，是图形化的服务管理页面
+- 从注册中心中获取到所有的提供者 / 消费者进行配置管理
+- 路由规则、动态配置、服务降级、访问控制、权重调整、负载均衡等管理功能
+- dubbo-admin 是一个前后端分离的项目。前端使用vue，后端使用springboot
+- 安装 dubbo-admin 其实就是部署该项目
+
+### 1.1 dubbo-admin安装
+
+**1、环境准备**
+
+dubbo-admin 是一个前后端分离的项目。前端使用vue，后端使用springboot，安装 dubbo-admin 其实就是部署该项目。我们将dubbo-admin安装到开发环境上。要保证开发环境有jdk，maven，nodejs
+
+安装node**(如果当前机器已经安装请忽略)**
+
+因为前端工程是用vue开发的，所以需要安装node.js，node.js中自带了npm，后面我们会通过npm启动
+
+下载地址
+
+```
+https://nodejs.org/en/
+```
+
+<img src="img(dubbo)/1578298201398.png" alt="1578298201398" style="zoom:80%;" />
+
+
+
+**2、下载 Dubbo-Admin**
+
+进入github，搜索dubbo-admin
+
+```
+https://github.com/apache/dubbo-admin
+```
+
+下载：
+
+<img src="img(dubbo)/1578297063167.png" alt="1578297063167" style="zoom:80%;" />
+
+**3、把下载的zip包解压到指定文件夹(解压到那个文件夹随意)**
+
+<img src="img(dubbo)/1578297477356.png" alt="1578297477356" style="zoom:80%;" />
+
+
+
+**4、修改配置文件**
+
+解压后我们进入…\dubbo-admin-develop\dubbo-admin-server\src\main\resources目录，找到 **application.properties** 配置文件 进行配置修改
+
+<img src="img(dubbo)/1578297603008.png" alt="1578297603008" style="zoom:80%;" />
+
+修改zookeeper地址
+
+<img src="img(dubbo)/1578297758655.png" alt="1578297758655" style="zoom:80%;" />
+
+```shell
+# centers in dubbo2.7
+admin.registry.address=zookeeper://192.168.149.135:2181
+admin.config-center=zookeeper://192.168.149.135:2181
+admin.metadata-report.address=zookeeper://192.168.149.135:2181
+
+```
+
+admin.registry.address注册中心
+admin.config-center 配置中心
+admin.metadata-report.address元数据中心
+
+**5、打包项目**
+
+在 dubbo-admin-develop 目录执行打包命令
+
+```shell
+mvn  clean package
+```
+
+<img src="img(dubbo)/1578300464726.png" alt="1578300464726" style="zoom:80%;" />
+
+**6、启动后端**
+
+切换到目录
+
+```shell
+dubbo-Admin-develop\dubbo-admin-distribution\target>
+```
+
+执行下面的命令启动 dubbo-admin，dubbo-admin后台由SpringBoot构建。
+
+```shell
+java -jar .\dubbo-admin-0.1.jar
+```
+
+**7、前台后端**
+
+dubbo-admin-ui 目录下执行命令
+
+```shell
+npm run dev
+```
+
+<img src="img(dubbo)/1578300677041.png" alt="1578300677041" style="zoom:80%;" />
+
+**8、访问**
+
+浏览器输入。用户名密码都是root
+
+```
+http://localhost:8081/
+```
+
+<img src="img(dubbo)/1578300774258.png" alt="1578300774258" style="zoom:80%;" />
+
+### 1.2 dubbo-admin简单使用
+
+<img src="img(dubbo)/image-20220206172833718.png" alt="image-20220206172833718" style="zoom:80%;" />
+
+注意:Dubbo Admin【服务Mock】【服务统计】将在后续版本发布....
+
+在上面的步骤中，我们已经进入了Dubbo-Admin的主界面，在【快速入门】章节中，我们定义了服务生产者、和服务消费者，下面我们从Dubbo-Admin管理界面找到这个两个服务
+
+**1、点击服务查询**
+
+<img src="img(dubbo)/image-20220206172935340.png" alt="image-20220206172935340" style="zoom:80%;" />
+
+**2、查询结果**
+
+<img src="img(dubbo)/1578301528363.png" alt="1578301528363" style="zoom:80%;" />
+
+
+
+A:输入的查询条件com.itheima.service.UserService
+
+B:搜索类型，主要分为【按服务名】【按IP地址】【按应用】三种类型查询
+
+C:搜索结果
+
+**3.1.4 dubo-admin查看详情**
+
+我们查看com.itheima.service.UserService （服务提供者）的具体详细信息，包含【元数据信息】
+
+**1）点击详情**
+
+<img src="img(dubbo)/image-20220206173023331.png" alt="image-20220206173023331" style="zoom: 80%;" />
+
+从【详情】界面查看，主要分为3个区域
+
+A区域：主要包含服务端 基础信息比如服务名称、应用名称等
+
+B区域：主要包含了生产者、消费者一些基本信息
+
+**C区域：是元数据信息，注意看上面的图,元数据信息是空的**
+
+我们需要打开我们的生产者配置文件加入下面配置
+
+```xml
+    <!-- 元数据配置 -->
+    <dubbo:metadata-report address="zookeeper://192.168.149.135:2181" />
+```
+
+重新启动生产者，再次打开Dubbo-Admin
+
+这样我们的元数据信息就出来了
+
+<img src="img(dubbo)/1578301892712.png" alt="1578301892712" style="zoom:80%;" />
+
+## 2、序列化
+
+<img src="img(dubbo)/image-20220206173321748.png" alt="image-20220206173321748" style="zoom:80%;" />
+
+- dubbo 内部已经将序列化和反序列化的过程内部封装了
+- 我们只需要在定义pojo类时实现Serializable接口即可
+- **一般会定义一个公共的pojo模块，让生产者和消费者都依赖该模块**
+- 如果不进行序列化，那么这些对象在传输时就会报错
 
