@@ -255,3 +255,214 @@ SpringCloud俨然已成为微服务开发的主流技术栈，在国内开发者
 
 > IDEA右侧旁的Maven插件有`Toggle ' Skip Tests' Mode`按钮，这样maven可以跳过单元测试，减少时间，提高效率
 
+## 微服务案例
+
+**支付模块**
+
+创建微服务模块套路：
+
+1. 建Module
+2. 改POM
+3. 写YML
+4. 主启动
+5. 业务类
+
+<img src="img(SpringCloud)/未命名文件.png" alt="未命名文件" style="zoom:80%;" />
+
+**1、建名为cloud-provider-payment8001的Maven工程**
+
+**2、该pom文件**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-provider-payment8001</artifactId>
+
+    <properties>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!--包含了sleuth+zipkin-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-zipkin</artifactId>
+        </dependency>
+        <!--eureka-client-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <!-- 引入自己定义的api通用包，可以使用Payment支付Entity -->
+        <!--
+        <dependency>
+            <groupId>com.atguigu.springcloud</groupId>
+            <artifactId>cloud-api-commons</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>druid-spring-boot-starter</artifactId>
+            <version>1.1.10</version>
+        </dependency>
+        <!--mysql-connector-java-->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+        </dependency>
+        <!--jdbc-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+**3、写yml文件**
+
+```yaml
+server:
+  port: 8001
+
+spring:
+  application:
+    name: cloud-payment-service
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource            # 当前数据源操作类型
+    driver-class-name: org.gjt.mm.mysql.Driver              # mysql驱动包
+    url: jdbc:mysql://localhost:3306/my?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    username: root
+    password: 1234
+
+mybatis:
+  mapperLocations: classpath:mapper/*.xml
+  type-aliases-package: com.eagle.springCloud.entities    # 所有Entity别名类所在包
+```
+
+**4、主启动类**
+
+```java
+package com.eagle.springCloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * @Author Maybe
+ * Date on 2022/2/21  13:55
+ */
+@SpringBootApplication
+public class PaymentMain8001 {
+    public static void main(String[] args) {
+        SpringApplication.run(PaymentMain8001.class, args);
+    }
+}
+```
+
+**5、业务**
+
+- SQL
+
+  ```sql
+  CREATE TABLE `payment`(
+  	`id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+      `serial` varchar(200) DEFAULT '',
+  	PRIMARY KEY (id)
+  )ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4
+  ```
+
+- Entities
+
+  - 实体类Payment
+
+    ```java
+    package com.eagle.springCloud.entities;
+    
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+    
+    import java.io.Serializable;
+    
+    /**
+     * @Author Maybe
+     * Date on 2022/2/21  14:33
+     */
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public class Payment implements Serializable {
+        private long id;
+        private String serial;
+    }
+    ```
+
+  - JSON封装体CommonResult：
+
+    ```java
+    package com.eagle.springCloud.entities;
+    
+    import lombok.AllArgsConstructor;
+    import lombok.Data;
+    import lombok.NoArgsConstructor;
+    
+    /**
+     * @Author Maybe
+     * Date on 2022/2/21  14:35
+     */
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public class CommonResult<T> {
+        private Integer code;//响应状态码
+        private String message;//响应信息
+        private T data;
+    
+        public CommonResult(Integer code, String message) {
+            this(code, message, null);
+        }
+    }
+    ```
+
+    

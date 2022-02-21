@@ -288,16 +288,15 @@ public class MyTest {
 > select
 
 - select标签是mybatis中最常用的标签之一
-
 - select语句有很多属性可以详细配置每一条SQL语句
-
-- - SQL语句返回值类型。【完整的类名或者别名】
+  - SQL语句返回值类型。【完整的类名或者别名】
   - 传入SQL语句的参数类型 。【万能的Map，可以多尝试使用】
   - 命名空间中唯一的标识符
   - 接口中的方法名与映射文件中的SQL语句ID 一一对应
   - id
   - parameterType
   - resultType
+
 
 ## CRUD(增删改查)
 
@@ -929,9 +928,7 @@ public void testSelectUserById() {
 <select id="selectUserById" resultMap="UserMap">
     select id , name , pwd from user where id = #{id}
 </select>
-```
 
-```xml
 <resultMap id="UserMap" type="User">
     <!-- id为主键 -->
     <id column="id" property="id"/>
@@ -1280,12 +1277,9 @@ public void testUserByRowBounds() {
 **关于接口的理解**
 
 - 接口从更深层次的理解，应是定义（规范，约束）与实现（名实分离的原则）的分离。
-
 - 接口的本身反映了系统设计人员对系统的抽象理解。
-
 - 接口应有两类：
-
-- - 第一类是对一个个体的抽象，它可对应为一个抽象体(abstract class)；
+  - 第一类是对一个个体的抽象，它可对应为一个抽象体（abstract class）；
   - 第二类是对一个个体某一方面的抽象，即形成一个抽象面（interface）；
 
 - 一个体有可能有多个抽象面。抽象体与抽象面是有区别的。
@@ -1602,13 +1596,13 @@ public List<Student> getStudents();
            2. StudentTeacher结果集的类型为 Student
            3. 学生中老师的属性为teacher，对应数据库中为tid。
               多个 [1,...）学生关联一个老师=> 一对一，一对多
-           4. 查看官网找到：association – 一个复杂类型的关联；使用它来处理关联查询
+           4. 查看官网找到：association 一个复杂类型的关联；使用它来处理关联查询
    -->
     <select id="getStudents" resultMap="StudentTeacher">
         select * from student
     </select>
     <resultMap id="StudentTeacher" type="Student">
-        <!--association关联属性 property属性名 javaType属性类型 column在多的一方的表中的列名-->
+        <!--association:关联属性 property:属性名 javaType:属性类型 column:在多的一方的表中的列名-->
         <!--column :指定将哪一列的值传给这个方法-->
         <!--
 			流程:使用select指定的方法(传入column指定的这列参数的值)查出对象，并封装给property指定的属性
@@ -1634,19 +1628,24 @@ public List<Student> getStudents();
 
 ```xml
 <resultMap id="StudentTeacher" type="Student">
-    <!--association关联属性 property属性名 javaType属性类型 column在多的一方的表中的列名-->
+    <!--association:关联属性 property:属性名 javaType:属性类型 column:在多的一方的表中的列名-->
     <association property="teacher"  column="{id=tid,name=tid}" javaType="Teacher" select="getTeacher"/>
 </resultMap>
 <!--
-这里传递过来的id，只有一个属性的时候，下面可以写任何值
-association中column多参数配置：
-   column="{key=value,key=value}"
-   其实就是键值对的形式，key是传给下个sql的取值名称，value是片段一中sql查询的字段名。
+	这里传递过来的id，只有一个属性的时候，下面可以写任何值
+	association中column多参数配置：
+    column="{key=value,key=value}"
+    其实就是键值对的形式，key是传给下个sql的取值名称，value是片段一中sql查询的字段名。
 -->
 <select id="getTeacher" resultType="teacher">
     select * from teacher where id = #{id} and name = #{name}
 </select>
 ```
+
+**association中column多参数配置：**
+
+- **column="{key=value,key=value}"**
+- **其实就是键值对的形式，key是传给下个sql的取值名称，value是片段一中sql查询的字段名。**
 
 5、测试
 
