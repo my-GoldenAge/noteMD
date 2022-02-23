@@ -465,4 +465,166 @@ public class PaymentMain8001 {
     }
     ```
 
+- Dao
+
+  - 接口PaymentDao：
+
+    ```java
+    package com.eagle.springCloud.dao;
     
+    import com.eagle.springCloud.entities.Payment;
+    import org.apache.ibatis.annotations.Mapper;
+    import org.apache.ibatis.annotations.Param;
+    
+    /**
+     * @ClassName: PaymentDao
+     * @author: Maybe
+     * @date: 2022/2/23  20:34
+     */
+    @Mapper //这里尽量使用mybatis的Mapper注解
+    public interface PaymentDao {
+        public int create(Payment payment);
+    
+        public Payment getPaymentById(@Param("id") Long id);
+    }
+    ```
+
+  - MyBatis映射文件PaymentMapper.xml，路径：resources/mapper/PaymentMapper.xml（因为在上面yaml配置里配置了该路径）
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+    <mapper namespace="com.eagle.springCloud.dao.PaymentDao">
+    
+        <!--useGeneratedKeys属性（仅适用于 insert 和 update）
+        会调用 JDBC 的 getGeneratedKeys 方法来取出由数据库内部生成的主键-->
+        <!--keyProperty属性（仅适用于 insert 和 update）
+        指定能够唯一识别对象的属性，MyBatis 会使用 getGeneratedKeys 的返回值
+        或 insert 语句的 selectKey 子元素设置它的值
+        这里其实就是接收前面useGeneratedKeys属性返回的主键-->
+        <insert id="create" parameterType="Payment" useGeneratedKeys="true" keyProperty="id">
+            insert into payment(serial) values (#{serial});
+        </insert>
+    
+        <resultMap id="BaseResultMap" type="com.eagle.springCloud.entities.Payment">
+            <id column="id" property="id" jdbcType="BIGINT"/>
+            <id column="serial" property="serial" jdbcType="VARCHAR"/>
+        </resultMap>
+        <select id="getPaymentById" parameterType="Long" resultMap="BaseResultMap">
+            select * from payment where id=#{id};
+        </select>
+    
+    </mapper>
+    ```
+
+- Service
+
+  - 接口PaymentService
+
+    ```java
+    package com.eagle.springCloud.service;
+    
+    import com.eagle.springCloud.entities.Payment;
+    import org.apache.ibatis.annotations.Param;
+    
+    /**
+     * @ClassName: PaymentService
+     * @author: Maybe
+     * @date: 2022/2/23  20:57
+     */
+    public interface PaymentService {
+        public int create(Payment payment);
+    
+        public Payment getPaymentById(@Param("id") Long id);
+    }
+    ```
+
+  - PaymentService实现类
+
+    ```java
+    package com.eagle.springCloud.service;
+    
+    import com.eagle.springCloud.dao.PaymentDao;
+    import com.eagle.springCloud.entities.Payment;
+    import org.springframework.stereotype.Service;
+    
+    import javax.annotation.Resource;
+    
+    /**
+     * @ClassName: PaymentServiceImpl
+     * @author: Maybe
+     * @date: 2022/2/23  20:58
+     */
+    @Service
+    public class PaymentServiceImpl implements PaymentService{
+    
+        /*
+        因为 PaymentDao 用的mybatis提供的@Mapper注解，所以并不在spring容器中，
+        只能使用java提供的@Resource进行注入
+         */
+        @Resource
+        private PaymentDao paymentDao;
+    
+        @Override
+        public int create(Payment payment) {
+            return paymentDao.create(payment);
+        }
+    
+        @Override
+        public Payment getPaymentById(Long id) {
+            return paymentDao.getPaymentById(id);
+        }
+    }
+    ```
+
+- Controller
+
+  ```java
+  package com.eagle.controller;
+  
+  import com.eagle.springCloud.entities.CommonResult;
+  import com.eagle.springCloud.entities.Payment;
+  import com.eagle.springCloud.service.PaymentService;
+  import lombok.extern.slf4j.Slf4j;
+  import org.springframework.web.bind.annotation.GetMapping;
+  import org.springframework.web.bind.annotation.PathVariable;
+  import org.springframework.web.bind.annotation.PostMapping;
+  import org.springframework.web.bind.annotation.RestController;
+  
+  import javax.annotation.Resource;
+  
+  /**
+   * @ClassName: PaymentController
+   * @author: Maybe
+   * @date: 2022/2/23  21:24
+   */
+  @RestController
+  @Slf4j
+  public class PaymentController {
+      @Resource
+      private PaymentService paymentService;
+  
+      @PostMapping("/payment/create")
+      public CommonResult crete(Payment payment) {
+          int result = paymentService.create(payment);
+          log.info("***插入成功" + result);
+          if (result > 0) {
+              return new CommonResult(200, "插入数据库成功", result);
+          } else {
+              return new CommonResult(444, "插入数据库失败", null);
+          }
+      }
+  
+      @GetMapping("/payment/get/{id}")
+      public CommonResult<Payment> getPaymentById(@PathVariable("id") Long id) {
+          Payment payment = paymentService.getPaymentById(id);
+          if (payment != null) {
+              return new CommonResult(200, "查询成功", payment);
+          } else {
+              return new CommonResult(444, "查询失败", null);
+          }
+      }
+  }
+  ```
+
+  
