@@ -580,7 +580,7 @@ public class PaymentMain8001 {
 - Controller
 
   ```java
-  package com.eagle.controller;
+  package com.eagle.springCloud.controller;
   
   import com.eagle.springCloud.entities.CommonResult;
   import com.eagle.springCloud.entities.Payment;
@@ -627,4 +627,256 @@ public class PaymentMain8001 {
   }
   ```
 
-  
+
+## 热部署Devtools
+
+**开发时使用，生产环境关闭**
+
+**1、Adding devtools to your project**（加在具体的模块中）
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-devtools</artifactId>
+    <scope>runtime</scope>
+    <optional>true</optional>
+</dependency>
+```
+
+**2、Adding plugin to your pom.xml**
+
+下段配置复制到聚合父类总工程的pom.xml
+
+```xml
+<build>
+    <!--
+	<finalName>你的工程名</finalName>（单一工程时添加）
+    -->
+    <plugins>
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+            <configuration>
+                <fork>true</fork>
+                <addResources>true</addResources>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+**3、Enabling automatic build**
+
+File -> Settings(New Project Settings->Settings for New Projects) ->Complier
+
+下面项勾选
+
+- Automatically show first error in editor
+- Display notification on build completion
+- Build project automatically
+- Compile independent modules in parallel
+
+**4、Update the value of**
+
+键入Ctrl + Shift + Alt + / ，打开Registry，勾选：
+
+- compiler.automake.allow.when.app.running
+
+- actionSystem.assertFocusAccessFromEdt
+
+**5、重启IDEA**
+
+## 消费者订单模块
+
+**1、建Module**
+
+创建名为cloud-consumer-order80的maven工程。
+
+**2、改POM**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-consumer-order80</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+**3、写YML**
+
+```yaml
+server:
+  port: 80
+```
+
+**4、主启动**
+
+```java
+package com.eagle.springCloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * @ClassName: Order80Main
+ * @author: Maybe
+ * @date: 2022/2/24  16:32
+ */
+@SpringBootApplication
+public class Order80Main {
+    public static void main(String[] args) {
+        SpringApplication.run(Order80Main.class, args);
+    }
+}
+```
+
+**5、业务类**
+
+实体类
+
+```java
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class Payment implements Serializable {
+    private Long id;
+    private String serial;
+}
+```
+
+```java
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class CommonResult<T>{
+    private Integer code;
+    private String message;
+    private T data;
+
+    public CommonResult(Integer code, String message){
+        this(code, message, null);
+    }
+}
+```
+
+控制层
+
+```java
+package com.eagle.springCloud.controller;
+
+import com.eagle.springCloud.entities.CommonResult;
+import com.eagle.springCloud.entities.Payment;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
+
+import javax.annotation.Resource;
+
+/**
+ * @ClassName: OrderController
+ * @author: Maybe
+ * @date: 2022/2/24  16:58
+ */
+@RestController
+@Slf4j
+public class OrderController {
+    public static final String PAYMENT_URL = "http://localhost:8001";
+
+    /*
+    RestTemplate提供了多种便捷访问远程Http服务的方法,
+    是一种简单便捷的访问restful服务模板类，是Spring提供的用于访问Rest服务的客户端模板工具集
+     */
+    @Resource
+    private RestTemplate restTemplate;
+
+    @GetMapping("/consumer/payment/create")
+    public CommonResult create(Payment payment) {
+        /*
+        使用restTemplate访问restful接口非常的简单粗暴无脑。
+        (url, requestMap, ResponseBean.class)这三个参数分别代表
+        REST请求地址、请求参数、HTTP响应转换被转换成的对象类型。
+         */
+        return restTemplate.postForObject(PAYMENT_URL + "/payment/create", payment, CommonResult.class);
+    }
+
+    @GetMapping("/consumer/payment/get/{id}")
+    public CommonResult<Payment> getPayment(@PathVariable("id") Long id) {
+        return restTemplate.getForObject(PAYMENT_URL + "/payment/get/" + id, CommonResult.class);
+    }
+}
+```
+
+配置类
+
+```java
+package com.eagle.springCloud.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * @ClassName: ApplicationContextConfig
+ * @author: Maybe
+ * @date: 2022/2/24  17:10
+ */
+@Configuration
+public class ApplicationContextConfig {
+    @Bean
+    public RestTemplate getRestTemplate() {
+        return new RestTemplate();
+    }
+}
+```
+
+**6、测试**
+
