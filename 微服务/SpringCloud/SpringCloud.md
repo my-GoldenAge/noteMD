@@ -371,7 +371,7 @@ spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource            # 当前数据源操作类型
     driver-class-name: org.gjt.mm.mysql.Driver              # mysql驱动包
-    url: jdbc:mysql://localhost:3306/my?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    url: jdbc:mysql://localhost:3306/springcloud?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: root
     password: 1234
 
@@ -483,9 +483,9 @@ public class PaymentMain8001 {
      */
     @Mapper //这里尽量使用mybatis的Mapper注解
     public interface PaymentDao {
-        public int create(Payment payment);
+        int create(Payment payment);
     
-        public Payment getPaymentById(@Param("id") Long id);
+        Payment getPaymentById(@Param("id") Long id);
     }
     ```
 
@@ -508,7 +508,7 @@ public class PaymentMain8001 {
     
         <resultMap id="BaseResultMap" type="com.eagle.springCloud.entities.Payment">
             <id column="id" property="id" jdbcType="BIGINT"/>
-            <id column="serial" property="serial" jdbcType="VARCHAR"/>
+            <result column="serial" property="serial" jdbcType="VARCHAR"/>
         </resultMap>
         <select id="getPaymentById" parameterType="Long" resultMap="BaseResultMap">
             select * from payment where id=#{id};
@@ -533,9 +533,9 @@ public class PaymentMain8001 {
      * @date: 2022/2/23  20:57
      */
     public interface PaymentService {
-        public int create(Payment payment);
+        int create(Payment payment);
     
-        public Payment getPaymentById(@Param("id") Long id);
+        Payment getPaymentById(@Param("id") Long id);
     }
     ```
 
@@ -605,7 +605,7 @@ public class PaymentMain8001 {
       private PaymentService paymentService;
   
       @PostMapping("/payment/create")
-      public CommonResult crete(Payment payment) {
+      public CommonResult crete(@RequestBody Payment payment) {
           int result = paymentService.create(payment);
           log.info("***插入成功" + result);
           if (result > 0) {
@@ -880,3 +880,85 @@ public class ApplicationContextConfig {
 
 **6、测试**
 
+## RunDashboard 窗口
+
+如果直接有该窗口就没问题，否则可以进行如下操作：
+
+通过修改idea的workspace.xml的方式来**快速打开Run Dashboard窗口**（这个用来显示哪些Spring Boot工程运行，停止等信息。我idea 2020.1版本在名为Services窗口就可以显示哪些Spring Boot工程运行，停止等信息出来，所以这仅作记录参考）。
+
+**开启Run DashBoard：**
+
+1. 打开工程路径下的.idea文件夹的workspace.xml
+
+2. 在`<component name="RunDashboard">`中修改或添加以下代码：
+
+   ```xml
+   <option name="configurationTypes">
+   	<set>
+   		<option value="SpringBootApplicationConfigurationType"/>
+       </set>
+   </option>
+   ```
+
+3. 由于idea版本差异，可能需要关闭重启。
+
+## 工程重构（抽离出通用的）
+
+观察cloud-consumer-order80与cloud-provider-payment8001两工程有重复代码（entities包下的实体），重构。
+
+1. 新建 cloud-api-commons 模块
+
+2. pom
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <project xmlns="http://maven.apache.org/POM/4.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+       <parent>
+           <artifactId>SpringCloud</artifactId>
+           <groupId>com.eagle.springcloud</groupId>
+           <version>1.0-SNAPSHOT</version>
+       </parent>
+       <modelVersion>4.0.0</modelVersion>
+   
+       <artifactId>cloud-api-commons</artifactId>
+   
+       <dependencies>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-devtools</artifactId>
+               <scope>runtime</scope>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.projectlombok</groupId>
+               <artifactId>lombok</artifactId>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>cn.hutool</groupId>
+               <artifactId>hutool-all</artifactId>
+               <version>5.1.0</version>
+           </dependency>
+       </dependencies>
+   
+   </project>
+   ```
+
+3. 将通用的类cv到 cloud-api-commons 模块中
+   <img src="img(SpringCloud)/image-20220226173422397.png" alt="image-20220226173422397" style="zoom:80%;" />
+
+4. maven **clean、install** cloud-api-commons工程，以供其他工程调用
+
+5. 在其他过程中的pom文件引入该模块（别忘了将已经抽离出来的删掉）
+
+   ```xml
+   <dependency>
+       <groupId>com.lun.springcloud</groupId>
+       <artifactId>cloud-api-commons</artifactId>
+       <version>${project.version}</version>
+   </dependency>
+   ```
+
+   
