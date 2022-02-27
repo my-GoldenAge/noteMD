@@ -16,7 +16,7 @@
 
 那微服务满足哪些维度？支撑起这些维度又有哪些具体技术？
 
-<img src="img(SpringCloud)/cloud-diagram-1a4cad7294b4452864b5ff57175dd983.svg" alt="Spring Cloud diagram" style="zoom:80%;" />
+<img src="img(SpringCloud)/image-20220226220754972.png" alt="image-20220226220754972" style="zoom:80%;" />
 
 - 服务调用
 - 服务降级
@@ -297,11 +297,6 @@ SpringCloud俨然已成为微服务开发的主流技术栈，在国内开发者
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-zipkin</artifactId>
-        </dependency>
-        <!--eureka-client-->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
         <!-- 引入自己定义的api通用包，可以使用Payment支付Entity -->
         <!--
@@ -961,4 +956,413 @@ public class ApplicationContextConfig {
    </dependency>
    ```
 
+
+
+
+# 5、Eureka服务注册与发现
+
+## Eureka 基本知识
+
+**什么是服务治理**
+
+Spring Cloud封装了Netflix 公司开发的Eureka模块来实现服务治理
+
+在传统的RPC远程调用框架中，管理每个服务与服务之间依赖关系比较复杂，管理比较复杂，所以需要使用服务治理，管理服务于服务之间依赖关系，可以实现服务调用、负载均衡、容错等，实现服务发现与注册。
+
+**什么是服务注册与发现**
+
+Eureka采用了CS的设计架构，Eureka Sever作为服务注册功能的服务器，它是服务注册中心。而系统中的其他微服务，使用Eureka的客户端连接到 Eureka Server并维持心跳连接。这样系统的维护人员就可以通过Eureka Server来监控系统中各个微服务是否正常运行。
+
+在服务注册与发现中，有一个注册中心。当服务器启动的时候，会把当前自己服务器的信息比如服务地址通讯地址等以别名方式注册到注册中心上。另一方(消费者服务提供者)，以该别名的方式去注册中心上获取到实际的服务通讯地址，然后再实现本地RPC调用RPC远程调用框架核心设计思想:在于注册中心，因为使用注册中心管理每个服务与服务之间的一个依赖关系(服务治理概念)。在任何RPC远程框架中，都会有一个注册中心存放服务地址相关信息(接口地址)
+
+<img src="img(SpringCloud)/3956561052b9dc3909f16f1ff26d01bb.png" alt="img" style="zoom:80%;" />
+
+**Eureka包含两个组件:Eureka Server和Eureka Client**
+
+- **Eureka Server提供服务注册服务**
+  各个微服务节点通过配置启动后，会在EurekaServer中进行注册，这样EurekaServer中的服务注册表中将会存储所有可用服务节点的信息，服务节点的信息可以在界面中直观看到。
+
+- **EurekaClient通过注册中心进行访问**
+  它是一个Java客户端，用于简化Eureka Server的交互，客户端同时也具备一个内置的、使用轮询(round-robin)负载算法的负载均衡器。在应用启动后，将会向Eureka Server发送心跳(默认周期为30秒)。如果Eureka Server在多个心跳周期内没有接收到某个节点的心跳，EurekaServer将会从服务注册表中把这个服务节点移除（默认90秒)
+
+## EurekaServer 服务端安装
+
+1. 建module （cloud-eureka-server7001）
+2. 改pom
+3. 写yml
+4. 主启动
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-eureka-server7001</artifactId>
+
+    <dependencies>
+        <!-- eureka-server -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+
+        <!--引入自己定义的api通用包，可以使用Payment支付Entity-->
+        <dependency>
+            <groupId>com.eagle.springcloud</groupId>
+            <artifactId>cloud-api-commons</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-web  -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- 一般通用配置 -->
+        <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-devtools -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/org.projectlombok/lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+        </dependency>
+
+    </dependencies>
+</project>
+```
+
+```yaml
+server:
+  port: 7001
+
+eureka:
+  instance:
+    hostname: locathost #eureka服务端的实例名称
+  client:
+    #false表示不向注册中心注册自己。
+    register-with-eureka: false
+    #false表示自己端就是注册中心，我的职责就是维护服务实例，并不需要去检索服务
+    fetch-registry: false
+    service-url:
+      #设置与Eureka server交互的地址查询服务和注册服务都需要依赖这个地址。
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+```
+
+5. 测试 http://localhost:7001/ 
+   <img src="img(SpringCloud)/image-20220227153054135.png" alt="image-20220227153054135" style="zoom:80%;" />
+
+## 支付微服务8001入驻进EurekaServer
+
+1. pom文件中加入Eureka-Client依赖
+
+   ```xml
+   <dependency>
+       <groupId>org.springframework.cloud</groupId>
+       <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+   </dependency>
+   ```
+
+2. 写yaml中对eureka的配置
+
+   ```yaml
+   eureka:
+     client:
+       #表示是否将自己注册进Eurekaserver默认为true。
+       register-with-eureka: true
+       #是否从EurekaServer抓取已有的注册信息，默认为true。单节点无所谓，集群必须设置为true才能配合ribbon使用负载均衡
+       fetchRegistry: true
+       service-url:
+         defaultZone: http://localhost:7001/eureka
+   ```
+
+3. 在主启动类上面添加Eureka客户端的注解
+
+   ```java
+   package com.eagle.springCloud;
    
+   import org.springframework.boot.SpringApplication;
+   import org.springframework.boot.autoconfigure.SpringBootApplication;
+   import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+   
+   /**
+    * @Author Maybe
+    * Date on 2022/2/21  13:55
+    */
+   @SpringBootApplication
+   @EnableEurekaClient
+   public class PaymentMain8001 {
+       public static void main(String[] args) {
+           SpringApplication.run(PaymentMain8001.class, args);
+       }
+   }
+   ```
+
+4. 测试刷新
+   <img src="img(SpringCloud)/image-20220227154823129.png" alt="image-20220227154823129" style="zoom:80%;" />
+
+## 订单微服务80入驻进EurekaServer
+
+步骤和上面一样，唯有要在yaml中加上服务的名字
+
+```yaml
+server:
+  port: 80
+
+spring:
+  application:
+    name: cloud-order-service
+
+eureka:
+  client:
+    #表示是否将自己注册进EurekaServer默认为true。
+    register-with-eureka: true
+    #是否从EurekaServer抓取已有的注册信息，默认为true。单节点无所谓，集群必须设置为true才能配合ribbon使用负载均衡
+    fetchRegistry: true
+    service-url:
+      defaultZone: http://localhost:7001/eureka
+```
+
+测试：
+
+<img src="img(SpringCloud)/image-20220227155341491.png" alt="image-20220227155341491" style="zoom:80%;" />
+
+## Eureka集群原理
+
+1. Eureka集群原理说明
+   <img src="img(SpringCloud)/14570c4b7c4dd8653be6211da2675e45.png" alt="img" style="zoom:80%;" />
+
+   > 服务注册：将服务信息注册进注册中心
+   >
+   > 服务发现：从注册中心上获取服务信息
+   >
+   > 实质：存key服务命取value闭用地址
+   >
+   > 1. 先启动eureka注主册中心
+   >
+   > 2. 启动服务提供者payment支付服务
+   >
+   > 3. 支付服务启动后会把自身信息(比服务地址L以别名方式注朋进eureka
+   >
+   > 4. 消费者order服务在需要调用接口时，使用服务别名去注册中心获取实际的RPC远程调用地址
+   >
+   > 5. 消去者导调用地址后，底屋实际是利用HttpClient技术实现远程调用
+   >
+   > 6. 消费者实癸导服务地址后会缓存在本地jvm内存中，默认每间隔30秒更新—次服务调用地址
+
+2. **试问**：微服务RPC远程服务调用最核心的是什么
+
+   **高可用**，试想你的注册中心只有一个only one，万一它出故障了，会导致整个为服务环境不可用。
+
+   解决办法：搭建Eureka注册中心集群，实现负载均衡+故障容错。
+
+## Eureka集群环境构建
+
+再建一个Eureka服务模块
+
+然后主要就是在两个模块的yaml中要区分一下名字，并且在service-url中相互设置集群中其他Eureka的URL
+
+> 由于我们测试都是在一台Windows系统上测试，所以可以修改一下C:\Windows\System32\drivers\etc路径下的hosts文件，修改映射配置添加进hosts文件，使得可以直接通过Eureka服务的名字进行访问
+>
+> ```
+> 127.0.0.1 eureka7001.com
+> 127.0.0.1 eureka7002.com
+> ```
+
+- 修改cloud-eureka-server7001配置文件
+
+  ```yaml
+  server:
+    port: 7001
+  
+  eureka:
+    instance:
+      hostname: eureka7001.com #eureka服务端的实例名称
+    client:
+      register-with-eureka: false     #false表示不向注册中心注册自己。
+      fetch-registry: false     #false表示自己端就是注册中心，我的职责就是维护服务实例，并不需要去检索服务
+      service-url:
+        #集群指向其它eureka
+        defaultZone: http://eureka7002.com:7002/eureka/
+        #单机就是7001自己
+        #defaultZone: http://eureka7001.com:7001/eureka/
+  ```
+
+- 修改cloud-eureka-server7001配置文件
+
+  ```yaml
+  server:
+    port: 7002
+  
+  eureka:
+    instance:
+      hostname: eureka7002.com #eureka服务端的实例名称
+    client:
+      register-with-eureka: false     #false表示不向注册中心注册自己。
+      fetch-registry: false     #false表示自己端就是注册中心，我的职责就是维护服务实例，并不需要去检索服务
+      service-url:
+        #集群指向其它eureka
+        defaultZone: http://eureka7001.com:7001/eureka/
+        #单机就是7002自己
+        #defaultZone: http://eureka7002.com:7002/eureka/
+  ```
+
+## 订单支付两微服务注册进Eureka集群
+
+将它们的配置文件的eureka.client.service-url.defaultZone进行修改
+
+```yaml
+eureka:
+  client:
+    #表示是否将自己注册进EurekaServer默认为true。
+    register-with-eureka: true
+    #是否从EurekaServer抓取已有的注册信息，默认为true。单节点无所谓，集群必须设置为true才能配合ribbon使用负载均衡
+    fetchRegistry: true
+    service-url:
+      #defaultZone: http://localhost:7001/eureka
+      defaultZone: http://eureka7001.com:7001/eureka, http://eureka7002.com:7002/eureka #集群版
+```
+
+<img src="img(SpringCloud)/image-20220227174249114.png" alt="image-20220227174249114" style="zoom:80%;" />
+
+
+
+## 支付微服务集群配置
+
+参考cloud-provicer-payment8001 创建一个 cloud-provicer-payment8002
+
+1. 新建cloud-provider-payment8002
+
+2. 改POM
+
+3. 写YML - 端口8002
+
+4. 主启动
+
+5. 业务类
+
+6. 修改8001/8002的Controller，添加serverPort（由于现在订单服务端是集群，所以要在controller层以不同的端口号进行标识）
+
+   ```java
+   package com.eagle.springCloud.controller;
+   
+   import com.eagle.springCloud.entities.CommonResult;
+   import com.eagle.springCloud.entities.Payment;
+   import com.eagle.springCloud.service.PaymentService;
+   import lombok.extern.slf4j.Slf4j;
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.web.bind.annotation.*;
+   
+   import javax.annotation.Resource;
+   
+   /**
+    * @ClassName: PaymentController
+    * @author: Maybe
+    * @date: 2022/2/23  21:24
+    */
+   @RestController
+   @Slf4j
+   public class PaymentController {
+       @Resource
+       private PaymentService paymentService;
+   
+       @Value("${server.port}")
+       private String serverPort; //为集群里不同端口的服务添加标识
+   
+       @PostMapping("/payment/create")
+       public CommonResult crete(@RequestBody Payment payment) {
+           int result = paymentService.create(payment);
+           log.info("***插入成功" + result);
+           if (result > 0) {
+               return new CommonResult(200, "插入数据库成功，serverPort：" + serverPort, result);
+           } else {
+               return new CommonResult(444, "插入数据库失败", null);
+           }
+       }
+   
+       @GetMapping("/payment/get/{id}")
+       public CommonResult<Payment> getPaymentById(@PathVariable("id") Long id) {
+           Payment payment = paymentService.getPaymentById(id);
+           if (payment != null) {
+               return new CommonResult(200, "查询成功，serverPort：" + serverPort, payment);
+           } else {
+               return new CommonResult(444, "查询失败", null);
+           }
+       }
+   }
+   ```
+
+7. **负载均衡**
+   cloud-consumer-order80订单服务访问地址不能写死
+
+   ```java
+   @RestController
+   @Slf4j
+   public class OrderController {
+       //地址不能写死，因为现在该服务是集群
+       //public static final String PAYMENT_URL = "http://localhost:8001";
+       public static final String PAYMENT_URL = "http://CLOUD-PAYMENT-SERVICE";//直接通过微服务的名称进行访问
+       ...
+   }
+   ```
+
+   使用@LoadBalanced注解赋予RestTemplate负载均衡的能力
+
+   ```java
+   package com.eagle.springCloud.config;
+   
+   import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+   import org.springframework.context.annotation.Bean;
+   import org.springframework.context.annotation.Configuration;
+   import org.springframework.web.client.RestTemplate;
+   
+   /**
+    * @ClassName: ApplicationContextConfig
+    * @author: Maybe
+    * @date: 2022/2/24  17:10
+    */
+   @Configuration
+   public class ApplicationContextConfig {
+       @Bean
+       @LoadBalanced//使用@LoadBalanced注解赋予RestTemplate负载均衡的能力
+       public RestTemplate getRestTemplate() {
+           return new RestTemplate();
+       }
+   }
+   ```
+
+8. 测试
+   先要启动EurekaServer，7001/7002服务，再启动其他访问，通过http://localhost/consumer/payment/get/2客户端进行访问多次：
+   <img src="img(SpringCloud)/image-20220227184018417.png" alt="image-20220227184018417" style="zoom:80%;" />
+   负载均衡成功（默认是使用轮询算法）
+
