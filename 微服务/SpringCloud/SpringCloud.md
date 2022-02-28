@@ -1366,3 +1366,557 @@ eureka:
    <img src="img(SpringCloud)/image-20220227184018417.png" alt="image-20220227184018417" style="zoom:80%;" />
    负载均衡成功（默认是使用轮询算法）
 
+## actuator微服务信息完善
+
+主机名称：服务名称修改（也就是将IP地址，换成可读性高的名字）
+
+修改cloud-provider-payment8001，cloud-provider-payment8002
+
+修改部分 - YML - eureka.instance.instance-id
+
+```yaml
+eureka:
+  ...
+  instance:
+    instance-id: payment8001 #添加此处
+```
+
+```yaml
+eureka:
+  ...
+  instance:
+    instance-id: payment8002 #添加此处
+```
+
+修改之后
+
+eureka主页将显示payment8001，payment8002代替原来显示的IP地址。
+
+---
+
+访问信息有IP信息提示，（就是将鼠标指针移至payment8001，payment8002名下，会有IP地址提示）
+
+修改部分 - YML - eureka.instance.prefer-ip-address
+
+```yaml
+eureka:
+  ...
+  instance:
+    instance-id: payment8001 
+    prefer-ip-address: true #添加此处
+```
+
+```yaml
+eureka:
+  ...
+  instance:
+    instance-id: payment8002 
+    prefer-ip-address: true #添加此处
+```
+
+## 服务发现Discovery
+
+对于注册进eureka里面的微服务，可以通过服务发现来获得该服务的信息
+
+- 修改cloud-provider-payment8001的Controller
+
+  ```java
+  @RestController
+  @Slf4j
+  public class PaymentController{
+  	...
+      
+      @Resource
+      private DiscoveryClient discoveryClient;
+  
+      ...
+  
+      @GetMapping(value = "/payment/discovery")
+      public Object discovery() {
+          List<String> services = discoveryClient.getServices();
+          // 获取所有微服务的名称
+          for (String service : services) {
+              log.info("***service:" + service);
+          }
+  
+          List<ServiceInstance> instances = discoveryClient.getInstances("CLOUD-PAYMENT-SERVICE");
+          // 获取具体某个微服务的所有实例（集群）
+          for (ServiceInstance instance : instances) {
+              log.info(instance.getServiceId() + "\t" + instance.getHost() + "\t"
+                      + instance.getPort() + "\t" + instance.getUri());
+          }
+          return discoveryClient;
+      }
+  }
+  ```
+
+- 8001主启动类
+
+  ```java
+  package com.eagle.springCloud;
+  
+  import org.springframework.boot.SpringApplication;
+  import org.springframework.boot.autoconfigure.SpringBootApplication;
+  import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+  import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+  
+  /**
+   * @Author Maybe
+   * Date on 2022/2/21  13:55
+   */
+  @SpringBootApplication
+  @EnableEurekaClient
+  @EnableDiscoveryClient
+  public class PaymentMain8001 {
+      public static void main(String[] args) {
+          SpringApplication.run(PaymentMain8001.class, args);
+      }
+  }
+  ```
+
+- <img src="img(SpringCloud)/image-20220228145014415.png" alt="image-20220228145014415" style="zoom:80%;" />
+
+## Eureka自我保护机制
+
+**概述：**
+
+保护模式主要用于一组客户端和Eureka Server之间存在网络分区场景下的保护。一旦进入保护模式，Eureka Server将会尝试保护其服务注册表中的信息，不再删除服务注册表中的数据，也就是不会注销任何微服务。
+
+如果在Eureka Server的首页看到以下这段提示，则说明Eureka进入了保护模式:
+
+> EMERGENCY! EUREKA MAY BE INCORRECTLY CLAIMING INSTANCES ARE UP WHEN THEY’RE NOT. RENEWALS ARE LESSER THANTHRESHOLD AND HENCE THE INSTANCES ARE NOT BEING EXPIRED JUSTTO BE SAFE
+
+**导致原因**
+
+一句话：某时刻某一个微服务不可用了，Eureka不会立刻清理，依旧会对该微服务的信息进行保存。
+
+属于CAP里面的AP分支。
+
+**为什么会产生Eureka自我保护机制?**
+
+为了EurekaClient可以正常运行，防止与EurekaServer网络不通情况下，EurekaServer不会立刻将EurekaClient服务剔除
+
+**什么是自我保护模式?**
+
+如果Eureka在server端在一定时间内(默认90秒)没有收到EurekaClient发送心跳包，便会直接从服务注册列表中剔除该服务，但是在短时间( 90秒中)内丢失了大量的服务实例心跳，这时候Eurekaserver会开启自我保护机制，不会剔除该服务（该现象可能出现在如果网络不通但是EurekaClient为出现宕机，此时如果换做别的注册中心如果一定时间内没有收到心跳会将剔除该服务，这样就出现了严重失误，因为客户端还能正常发送心跳，只是网络延迟问题，而保护机制是为了解决此问题而产生的)。
+
+**在自我保护模式中，Eureka Server会保护服务注册表中的信息，不再注销任何服务实例。**
+
+它的设计哲学就是宁可保留错误的服务注册信息，也不盲目注销任何可能健康的服务实例。一句话讲解：好死不如赖活着。
+
+综上，自我保护模式是一种应对网络异常的安全保护措施。它的架构哲学是宁可同时保留所有微服务（健康的微服务和不健康的微服务都会保留）也不盲目注销任何健康的微服务。使用自我保护模式，可以让Eureka集群更加的健壮、稳定。
+
+**禁用自我保护**
+
+```yaml
+eureka:
+  ...
+  server:
+    #关闭自我保护机制，保证不可用服务被及时踢除
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 2000
+```
+
+## Eureka停更说明
+
+https://github.com/Netflix/eureka/wiki
+
+> **Eureka 2.0 (Discontinued)**
+>
+> The existing open source work on eureka 2.0 is discontinued. The code base and artifacts that were released as part of the existing repository of work on the 2.x branch is considered use at your own risk.
+>
+> Eureka 1.x is a core part of Netflix’s service discovery system and is still an active project.
+
+# 6、Zookeeper服务注册与发现
+
+[Zookeeper](https://blog.csdn.net/java_66666/article/details/81015302?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522164603694716781683977954%2522%252C%2522scm%2522%253A%252220140713.130102334..%2522%257D&request_id=164603694716781683977954&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~top_positive~default-1-81015302.pc_search_result_cache&utm_term=zookeeper&spm=1018.2226.3001.4187)相关操作
+
+## zookeeper代替Eureka
+
+zookeeper是一个分布式协调工具，可以实现注册中心功能
+
+关闭Linux服务器防火墙后，启动zookeeper服务器
+
+用到的Linux命令行：
+
+- systemctl stop firewalld关闭防火墙
+- systemctl status firewalld查看防火墙状态
+- ipconfig查看IP地址
+- ping查验结果
+
+zookeeper服务器取代Eureka服务器，zk作为服务注册中心
+
+1. 新建名为cloud-provider-payment8004的Maven工程。
+
+2. POM
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <project xmlns="http://maven.apache.org/POM/4.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+       <parent>
+           <artifactId>SpringCloud</artifactId>
+           <groupId>com.eagle.springcloud</groupId>
+           <version>1.0-SNAPSHOT</version>
+       </parent>
+       <modelVersion>4.0.0</modelVersion>
+   
+       <artifactId>cloud-provider-payment8004</artifactId>
+   
+       <properties>
+           <maven.compiler.source>8</maven.compiler.source>
+           <maven.compiler.target>8</maven.compiler.target>
+       </properties>
+   
+       <dependencies>
+           <!-- SpringBoot整合Web组件 -->
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-web</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-actuator</artifactId>
+           </dependency>
+           <dependency><!-- 引入自己定义的api通用包，可以使用Payment支付Entity -->
+               <groupId>com.eagle.springcloud</groupId>
+               <artifactId>cloud-api-commons</artifactId>
+               <version>${project.version}</version>
+           </dependency>
+           <!-- SpringBoot整合zookeeper客户端 -->
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-zookeeper-discovery</artifactId>
+               <!--先排除自带的zookeeper3.5.3 防止与3.4.9起冲突-->
+               <exclusions>
+                   <exclusion>
+                       <groupId>org.apache.zookeeper</groupId>
+                       <artifactId>zookeeper</artifactId>
+                   </exclusion>
+               </exclusions>
+           </dependency>
+           <!--添加zookeeper3.5.6版本-->
+           <dependency>
+               <groupId>org.apache.zookeeper</groupId>
+               <artifactId>zookeeper</artifactId>
+               <version>3.5.6</version>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-devtools</artifactId>
+               <scope>runtime</scope>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.projectlombok</groupId>
+               <artifactId>lombok</artifactId>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-test</artifactId>
+               <scope>test</scope>
+           </dependency>
+       </dependencies>
+   
+   </project>
+   ```
+
+   **注意：**spring-cloud-starter-zookeeper-discovery里的zookeeper可能会与你添加的zookeeper有冲突导致项目启动失败，所以可以在spring-cloud-starter-zookeeper-discovery中将冲突的部分排除在外
+
+3. yaml
+
+   ```yaml
+   #8004表示注册到zookeeper服务器的支付服务提供者端口号
+   server:
+     port: 8004
+   
+   #服务别名----注册zookeeper到注册中心名称
+   spring:
+     application:
+       name: cloud-provider-payment
+     cloud:
+       zookeeper:
+         connect-string: 192.168.200.128:2181 #Linux上Zookeeper的ip端口
+   ```
+
+4. 主启动类
+
+   ```java
+   package com.eagle.springcloud;
+   
+   import org.springframework.boot.SpringApplication;
+   import org.springframework.boot.autoconfigure.SpringBootApplication;
+   import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+   
+   /**
+    * @ClassName: PaymentMain8004
+    * @author: Maybe
+    * @date: 2022/2/28  15:57
+    */
+   @SpringBootApplication
+   @EnableDiscoveryClient//该注解用于向使用consul或者zookeeper作为注册中心时注册服务
+   public class PaymentMain8004 {
+       public static void main(String[] args) {
+           SpringApplication.run(PaymentMain8004.class, args);
+       }
+   }
+   ```
+
+5. controller测试
+
+   ```java
+   package com.eagle.springcloud.controller;
+   
+   import lombok.extern.slf4j.Slf4j;
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   
+   import java.util.UUID;
+   
+   /**
+    * @ClassName: PaymentController
+    * @author: Maybe
+    * @date: 2022/2/28  15:59
+    */
+   @RestController
+   @Slf4j
+   public class PaymentController {
+       @Value("${server.port}")
+       private String serverPort;
+   
+       @GetMapping("/payment/zk")
+       public Object paymentzk() {
+           return "springCloud with zookeeper: " + serverPort + "\t" + UUID.randomUUID().toString();
+       }
+   }
+   ```
+
+   浏览器测试成功：http://localhost:8004/payment/zk
+   接着用zookeeper客户端操作：
+   <img src="img(SpringCloud)/image-20220228164931083.png" alt="image-20220228164931083" style="zoom:80%;" />
+   将json串格式化看一下：
+
+   ```json
+   {
+     "name": "cloud-provider-payment",
+     "id": "a4d21ee1-b276-4f2b-af05-0eaa8ced8b07",
+     "address": "LAPTOP-5DN4I3UA",
+     "port": 8004,
+     "payload": {
+       "@class": "org.springframework.cloud.zookeeper.discovery.ZookeeperInstance",
+       "id": "application-1",
+       "name": "cloud-provider-payment",
+       "metadata": {}
+     },
+     "registrationTimeUTC": 1646037743876,
+     "serviceType": "DYNAMIC",
+     "uriSpec": {
+       "parts": [
+         {
+           "value": "scheme",
+           "variable": true
+         },
+         {
+           "value": "://",
+           "variable": false
+         },
+         {
+           "value": "address",
+           "variable": true
+         },
+         {
+           "value": ":",
+           "variable": false
+         },
+         {
+           "value": "port",
+           "variable": true
+         }
+       ]
+     }
+   }
+   ```
+
+   ZooKeeper的服务节点是**临时节点**
+
+## 订单服务注册进zookeeper
+
+1. 新建cloud-consumerzk-order80
+
+2. POM
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <project xmlns="http://maven.apache.org/POM/4.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+       <parent>
+           <artifactId>SpringCloud</artifactId>
+           <groupId>com.eagle.springcloud</groupId>
+           <version>1.0-SNAPSHOT</version>
+       </parent>
+       <modelVersion>4.0.0</modelVersion>
+   
+       <artifactId>cloud-consumerzk-order80</artifactId>
+   
+       <dependencies>
+           <!-- SpringBoot整合Web组件 -->
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-web</artifactId>
+           </dependency>
+           <!-- SpringBoot整合zookeeper客户端 -->
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-zookeeper-discovery</artifactId>
+               <!--先排除自带的zookeeper3.5.3 防止与3.4.9起冲突-->
+               <exclusions>
+                   <exclusion>
+                       <groupId>org.apache.zookeeper</groupId>
+                       <artifactId>zookeeper</artifactId>
+                   </exclusion>
+               </exclusions>
+           </dependency>
+           <!--添加zookeeper3.5.6版本-->
+           <dependency>
+               <groupId>org.apache.zookeeper</groupId>
+               <artifactId>zookeeper</artifactId>
+               <version>3.5.6</version>
+               <exclusions>
+                   <exclusion>
+                       <groupId>org.slf4j</groupId>
+                       <artifactId>slf4j-log4j12</artifactId>
+                   </exclusion>
+               </exclusions>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-devtools</artifactId>
+               <scope>runtime</scope>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.projectlombok</groupId>
+               <artifactId>lombok</artifactId>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-test</artifactId>
+               <scope>test</scope>
+           </dependency>
+       </dependencies>
+   
+   </project>
+   ```
+
+3. YAML
+
+   ```yaml
+   server:
+     port: 80
+   
+   #服务别名----注册zookeeper到注册中心名称
+   spring:
+     application:
+       name: cloud-consumer-order
+     cloud:
+       zookeeper:
+         connect-string: 192.168.200.128:2181 #Linux上Zookeeper的ip端口
+   ```
+
+4. 主启动
+
+   ```java
+   package com.eagle.springcloud;
+   
+   import org.springframework.boot.SpringApplication;
+   import org.springframework.boot.autoconfigure.SpringBootApplication;
+   import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+   
+   /**
+    * @ClassName: OrderZKMain80
+    * @author: Maybe
+    * @date: 2022/2/28  20:17
+    */
+   @SpringBootApplication
+   @EnableDiscoveryClient
+   public class OrderZKMain80 {
+       public static void main(String[] args) {
+           SpringApplication.run(OrderZKMain80.class, args);
+       }
+   }
+   ```
+
+5. Bean
+
+   ```java
+   package com.eagle.config;
+   
+   import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+   import org.springframework.context.annotation.Bean;
+   import org.springframework.context.annotation.Configuration;
+   import org.springframework.web.client.RestTemplate;
+   
+   /**
+    * @ClassName: ApplicationContextConfig
+    * @author: Maybe
+    * @date: 2022/2/28  20:20
+    */
+   @Configuration
+   public class ApplicationContextConfig {
+       @Bean
+       @LoadBalanced
+       public RestTemplate getRestTemplate(){
+           return new RestTemplate();
+       }
+   }
+   ```
+
+6. controller
+
+   ```java
+   package com.eagle.controller;
+   
+   import lombok.extern.slf4j.Slf4j;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   import org.springframework.web.client.RestTemplate;
+   
+   import javax.annotation.Resource;
+   
+   /**
+    * @ClassName: OrderZKController
+    * @author: Maybe
+    * @date: 2022/2/28  20:26
+    */
+   @RestController
+   @Slf4j
+   public class OrderZKController {
+       public static final String INVOKE_URL = "http://cloud-provider-payment";
+   
+       @Resource
+       private RestTemplate restTemplate;
+   
+       @GetMapping(value = "/consumer/payment/zk")
+       public String paymentInfo() {
+           log.info("111");
+           String result = restTemplate.getForObject(INVOKE_URL + "/payment/zk", String.class);
+           return result;
+       }
+   }
+   ```
+
+7. 测试
+
+   ```sh
+   [zk: localhost:2181(CONNECTED) 0] ls /
+   [services, zookeeper]
+   [zk: localhost:2181(CONNECTED) 1] ls /services
+   [cloud-consumer-order, cloud-provider-payment]
+   [zk: localhost:2181(CONNECTED) 2]
+   ```
+
