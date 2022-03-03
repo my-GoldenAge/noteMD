@@ -2944,3 +2944,617 @@ ribbon:
   ConnectTimeout: 5000
 ```
 
+## OpenFeign日志增强
+
+**日志打印功能**
+
+Feign提供了日志打印功能，我们可以通过配置来调整日恙级别，从而了解Feign 中 Http请求的细节。
+
+说白了就是对Feign接口的调用情况进行监控和输出
+
+**日志级别**
+
+- NONE：默认的，不显示任何日志;
+- BASIC：仅记录请求方法、URL、响应状态码及执行时间;
+- HEADERS：除了BASIC中定义的信息之外，还有请求和响应的头信息;
+- FULL：除了HEADERS中定义的信息之外，还有请求和响应的正文及元数据。
+
+**配置日志bean**
+
+```java
+package com.eagle.springcloud.config;
+
+import feign.Logger;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * @ClassName: FeignConfig
+ * @author: Maybe
+ * @date: 2022/3/3  15:20
+ */
+@Configuration
+public class FeignConfig {
+    @Bean
+    Logger.Level feignLoggerLevel() {
+        return Logger.Level.FULL;
+    }
+}
+```
+
+**YML文件里需要开启日志的Feign客户端**
+
+```yaml
+logging:
+  level:
+    # feign日志以什么级别监控哪个接口
+    com.eagle.springcloud.service.PaymentFeignService: debug
+```
+
+**后台日志查看**
+
+得到更多日志信息。
+
+# 10、Hystrix断路器
+
+## Hystrix是什么
+
+**概述**
+
+**分布式系统面临的问题**
+
+复杂分布式体系结构中的应用程序有数十个依赖关系，每个依赖关系在某些时候将不可避免地失败。
+
+**服务雪崩**
+
+多个微服务之间调用的时候，假设微服务A调用微服务B和微服务C，微服务B和微服务C又调用其它的微服务，这就是所谓的“扇出”。如果扇出的链路上某个微服务的调用响应时间过长或者不可用，对微服务A的调用就会占用越来越多的系统资源，进而引起系统崩溃，所谓的“雪崩效应”。
+对于高流量的应用来说，单一的后避依赖可能会导致所有服务器上的所有资源都在几秒钟内饱和。比失败更糟糕的是，这些应用程序还可能导致服务之间的延迟增加，备份队列，线程和其他系统资源紧张，导致整个系统发生更多的级联故障。这些都表示需要对故障和延迟进行隔离和管理，以便单个依赖关系的失败，不能取消整个应用程序或系统。
+
+所以，通常当你发现一个模块下的某个实例失败后，这时候这个模块依然还会接收流量，然后这个有问题的模块还调用了其他的模块，这样就会发生级联故障，或者叫雪崩。
+
+**Hystrix是什么**
+
+Hystrix是一个用于处理分布式系统的**延迟**和**容错**的开源库，在分布式系统里，许多依赖不可避免的会调用失败，比如超时、异常等，Hystrix能够保证在一个依赖出问题的情况下，**不会导致整体服务失败，避免级联故障，以提高分布式系统的弹性**。
+
+"断路器”本身是一种开关装置，当某个服务单元发生故障之后，通过断路器的故障监控（类似熔断保险丝)，向调用方返回一个符合预期的、可处理的备选响应（FallBack)，而不是长时间的等待或者抛出调用方无法处理的异常，这样就保证了服务调用方的线程不会被长时间、不必要地占用，从而避免了故障在分布式系统中的蔓延，乃至雪崩。
+
+**能干嘛**
+
+- 服务降级
+- 服务熔断
+- 接近实对的监控
+
+## Hystrix停更进维
+
+[官网资料](https://github.com/Netflix/Hystrix/wiki/How-To-Use)
+
+[Hystrix官宣，停更进维](https://github.com/Netflix/Hystrix)
+
+被动修bugs
+
+不再接受合并请求
+
+不再发布新版本
+
+## Hystrix的服务降级熔断限流概念初讲
+
+**服务降级**
+
+服务器忙，请稍后再试，不让客户端等待并立刻返回一个友好提示，fallback
+
+**哪些情况会出发降级**
+
+- 程序运行导常
+- 超时
+- 服务熔断触发服务降级
+- 线程池/信号量打满也会导致服务降级
+
+**服务熔断**
+
+**类比保险丝**达到最大服务访问后，直接拒绝访问，拉闸限电，然后调用服务降级的方法并返回友好提示。
+
+服务的降级 -> 进而熔断 -> 恢复调用链路
+
+**服务限流**
+
+秒杀高并发等操作，严禁一窝蜂的过来拥挤，大家排队，一秒钟N个，有序进行。
+
+## Hystrix支付微服务构建
+
+将cloud-eureka-server7001改配置成单机版
+
+1. 新建cloud-provider-hygtrix-payment8001
+
+2. POM
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <project xmlns="http://maven.apache.org/POM/4.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+       <parent>
+           <artifactId>SpringCloud</artifactId>
+           <groupId>com.eagle.springcloud</groupId>
+           <version>1.0-SNAPSHOT</version>
+       </parent>
+       <modelVersion>4.0.0</modelVersion>
+   
+       <artifactId>cloud-provider-hygtrix-payment8001</artifactId>
+   
+       <dependencies>
+           <!--新增hystrix-->
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-netflix-hystrix</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+           </dependency>
+           <!-- 引入自己定义的api通用包，可以使用Payment支付Entity -->
+           <dependency>
+               <groupId>com.eagle.springcloud</groupId>
+               <artifactId>cloud-api-commons</artifactId>
+               <version>${project.version}</version>
+           </dependency>
+           <!--通用-->
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-web</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-actuator</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-devtools</artifactId>
+               <scope>runtime</scope>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.projectlombok</groupId>
+               <artifactId>lombok</artifactId>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-test</artifactId>
+               <scope>test</scope>
+           </dependency>
+       </dependencies>
+   </project>
+   ```
+
+3. yaml
+
+   ```yaml
+   server:
+     port: 8001
+   
+   spring:
+     application:
+       name: cloud-provider-hystrix-payment
+   
+   eureka:
+     client:
+       register-with-eureka: true
+       fetch-registry: true
+       service-url:
+         #defaultZone: http://eureka7001.com:7001/eureka,http://eureka7002.com:7002/eureka
+         defaultZone: http://eureka7001.com:7001/eureka
+   ```
+
+4. 主启动
+
+   ```java
+   package com.eagle.springcloud;
+   
+   import org.springframework.boot.SpringApplication;
+   import org.springframework.boot.autoconfigure.SpringBootApplication;
+   import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+   
+   /**
+    * @ClassName: PaymentHystrixMain8001
+    * @author: Maybe
+    * @date: 2022/3/3  17:05
+    */
+   @SpringBootApplication
+   @EnableEurekaClient
+   public class PaymentHystrixMain8001 {
+       public static void main(String[] args) {
+           SpringApplication.run(PaymentHystrixMain8001.class, args);
+       }
+   }
+   ```
+
+5. 业务
+
+   ```java
+   package com.eagle.springcloud.service;
+   
+   import org.springframework.stereotype.Service;
+   
+   import java.util.concurrent.TimeUnit;
+   
+   /**
+    * @ClassName: PaymentService
+    * @author: Maybe
+    * @date: 2022/3/3  17:06
+    */
+   @Service
+   public class PaymentService {
+       public String paymentInfo_OK(Integer id) {
+           return "线程池: " + Thread.currentThread().getName() +
+                   "  paymentInfo_OK,id: " + id + "\t" + "O(∩_∩)O哈哈~";
+       }
+   
+       public String paymentInfo_TimeOut(Integer id) {
+           try {
+               TimeUnit.SECONDS.sleep(3);
+           } catch (Exception e) {
+               e.printStackTrace();
+           }
+           return "线程池: " + Thread.currentThread().getName() +
+                   "  paymentInfo_TimeOut,id: " + id + "\t" + "O(∩_∩)O哈哈~" +
+                   "耗时(s)：3";
+       }
+   }
+   ```
+
+   ```java
+   package com.eagle.springcloud.controller;
+   
+   import com.eagle.springcloud.service.PaymentService;
+   import lombok.extern.slf4j.Slf4j;
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.PathVariable;
+   import org.springframework.web.bind.annotation.RestController;
+   
+   import javax.annotation.Resource;
+   
+   /**
+    * @ClassName: PaymentController
+    * @author: Maybe
+    * @date: 2022/3/3  17:14
+    */
+   @RestController
+   @Slf4j
+   public class PaymentController {
+       @Resource
+       private PaymentService paymentService;
+   
+       @Value("${server.port}")
+       private String serverPort;
+   
+       @GetMapping("/payment/hystrix/ok/{id}")
+       public String paymentInfo_OK(@PathVariable("id") Integer id) {
+           String result = paymentService.paymentInfo_OK(id);
+           log.info("*****result: " + result);
+           return result;
+       }
+   
+       @GetMapping("/payment/hystrix/timeout/{id}")
+       public String paymentInfo_TimeOut(@PathVariable("id") Integer id) {
+           String result = paymentService.paymentInfo_TimeOut(id);
+           log.info("*****result: " + result);
+           return result;
+       }
+   }
+   ```
+
+6. 正常测试
+
+   启动eureka7001
+
+   启动cloud-provider-hystrix-payment8001
+
+   访问
+
+   success的方法 - http://localhost:8001/payment/hystrix/ok/1
+   每次调用耗费3秒钟 - http://localhost:8001/payment/hystrix/timeout/1
+
+   上述module均OK
+
+   以上述为根基平台，从正确 -> 错误 -> 降级熔断 -> 恢复。
+
+## JMeter高并发压测后卡顿
+
+**上述在非高并发情形下，还能勉强满足**
+
+**Jmeter压测测试**
+
+[JMeter官网](https://jmeter.apache.org/index.html)
+
+> The **Apache JMeter™** application is open source software, a 100% pure Java application designed to load test functional behavior and measure performance. It was originally designed for testing Web Applications but has since expanded to other test functions.
+
+开启Jmeter，来20000个并发压死8001，20000个请求都去访问paymentInfo_TimeOut服务
+
+1. 测试计划中右键添加-》线程-》线程组（线程组202102，线程数：200，线程数：100，其他参数默认）
+
+2. 刚刚新建线程组202102，右键它-》添加-》取样器-》Http请求-》基本 输入http://localhost:8001/payment/hystrix/ok/1
+
+3. 点击绿色三角形图标启动。
+
+看演示结果：拖慢，原因：tomcat的默认的工作线程数被打满了，没有多余的线程来分解压力和处理。
+
+**Jmeter压测结论**
+
+上面还是服务提供者8001自己测试，假如此时外部的消费者80也来访问，那消费者只能干等，最终导致消费端80不满意，服务端8001直接被拖慢。
+
+## 订单微服务调用支付服务出现卡顿
+
+**看热闹不嫌弃事大，80新建加入**
+
+1. 新建 - cloud-consumer-feign-hystrix-order80
+
+2. POM
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <project xmlns="http://maven.apache.org/POM/4.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+       <parent>
+           <artifactId>SpringCloud</artifactId>
+           <groupId>com.eagle.springcloud</groupId>
+           <version>1.0-SNAPSHOT</version>
+       </parent>
+       <modelVersion>4.0.0</modelVersion>
+   
+       <artifactId>cloud-consumer-feign-hystrix-order80</artifactId>
+   
+       <dependencies>
+           <!--openfeign-->
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-openfeign</artifactId>
+           </dependency>
+           <!--新增hystrix-->
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-netflix-hystrix</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.cloud</groupId>
+               <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+           </dependency>
+           <!-- 引入自己定义的api通用包，可以使用Payment支付Entity -->
+           <dependency>
+               <groupId>com.eagle.springcloud</groupId>
+               <artifactId>cloud-api-commons</artifactId>
+               <version>${project.version}</version>
+           </dependency>
+           <!--通用-->
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-web</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-actuator</artifactId>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-devtools</artifactId>
+               <scope>runtime</scope>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.projectlombok</groupId>
+               <artifactId>lombok</artifactId>
+               <optional>true</optional>
+           </dependency>
+           <dependency>
+               <groupId>org.springframework.boot</groupId>
+               <artifactId>spring-boot-starter-test</artifactId>
+               <scope>test</scope>
+           </dependency>
+       </dependencies>
+   </project>
+   ```
+
+3. yaml
+
+   ```yaml
+   server:
+     port: 80
+   
+   eureka:
+     client:
+       register-with-eureka: false
+       service-url:
+         defaultZone: http://eureka7001.com:7001/eureka/
+   ```
+
+4. 主启动
+
+   ```java
+   package com.eagle.springcloud;
+   
+   import org.springframework.boot.SpringApplication;
+   import org.springframework.boot.autoconfigure.SpringBootApplication;
+   import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+   
+   /**
+    * @ClassName: OrderHystrixMain80
+    * @author: Maybe
+    * @date: 2022/3/3  21:34
+    */
+   @SpringBootApplication
+   @EnableEurekaClient
+   //@EnableHystrix //80客户端一般不用
+   public class OrderHystrixMain80 {
+       public static void main(String[] args) {
+           SpringApplication.run(OrderHystrixMain80.class, args);
+       }
+   }
+   ```
+
+5. 业务
+
+   ```java
+   package com.eagle.springcloud.service;
+   
+   import org.springframework.cloud.openfeign.FeignClient;
+   import org.springframework.stereotype.Component;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.PathVariable;
+   
+   /**
+    * @ClassName: PaymentHystrixService
+    * @author: Maybe
+    * @date: 2022/3/3  21:40
+    */
+   @Component
+   @FeignClient(value = "cloud-provider-hystrix-payment")
+   public interface PaymentHystrixService {
+       @GetMapping("/payment/hystrix/ok/{id}")
+       String paymentInfo_OK(@PathVariable("id") Integer id);
+   
+       @GetMapping("/payment/hystrix/timeout/{id}")
+       String paymentInfo_TimeOut(@PathVariable("id") Integer id);
+   }
+   ```
+
+   ```java
+   package com.eagle.springcloud.controller;
+   
+   import com.eagle.springcloud.service.PaymentHystrixService;
+   import lombok.extern.slf4j.Slf4j;
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.PathVariable;
+   import org.springframework.web.bind.annotation.RestController;
+   
+   import javax.annotation.Resource;
+   
+   /**
+    * @ClassName: OrderHystirxController
+    * @author: Maybe
+    * @date: 2022/3/3  21:41
+    */
+   @RestController
+   @Slf4j
+   public class OrderHystirxController {
+       @Resource
+       private PaymentHystrixService paymentHystrixService;
+   
+       @Value("${server.port}")
+       private String serverPort;
+   
+       @GetMapping("/consumer/payment/hystrix/ok/{id}")
+       public String paymentInfo_OK(@PathVariable("id") Integer id) {
+           return paymentHystrixService.paymentInfo_OK(id);
+       }
+   
+       @GetMapping("/consumer/payment/hystrix/timeout/{id}")
+       public String paymentInfo_TimeOut(@PathVariable("id") Integer id) {
+           return paymentHystrixService.paymentInfo_TimeOut(id);
+       }
+   }
+   ```
+
+6. 正常测试
+
+   http://localhost/consumer/payment/hystrix/ok/1
+
+7. 高并发测试
+
+   2W个线程压8001
+
+   消费端80微服务再去访问正常的Ok微服务8001地址
+
+   http://localhost/consumer/payment/hystrix/ok/32
+
+   消费者80被拖慢
+
+   原因：8001同一层次的其它接口服务被困死，因为tomcat线程池里面的工作线程已经被挤占完毕。
+
+   正因为有上述故障或不佳表现才有我们的降级/容错/限流等技术诞生。
+
+## 降级容错解决的维度要求
+
+超时导致服务器变慢(转圈) - 超时不再等待
+
+出错(宕机或程序运行出错) - 出错要有兜底
+
+解决：
+
+- 对方服务(8001)超时了，调用者(80)不能一直卡死等待，必须有服务降级。
+- 对方服务(8001)down机了，调用者(80)不能一直卡死等待，必须有服务降级。
+- 对方服务(8001)OK，调用者(80)自己出故障或有自我要求(自己的等待时间小于服务提供者)，自己处理降级。
+
+## Hystrix之服务降级支付侧fallback
+
+降级配置 - @HystrixCommand
+
+8001先从自身找问题
+
+**设置自身调用超时时间的峰值，峰值内可以正常运行，超过了需要有兜底的方法处埋，作服务降级fallback**。
+
+**8001fallback**
+
+业务类启用 - @HystrixCommand报异常后如何处理
+
+—旦调用服务方法失败并抛出了错误信息后，会自动调用@HystrixCommand标注好的fallbackMethod调用类中的指定方法
+
+```java
+@HystrixCommand(fallbackMethod = "paymentInfo_TimeOutHandler"/*指定善后方法名*/,
+        commandProperties = {@HystrixProperty(
+                name = "execution.isolation.thread.timeoutInMilliseconds",
+                value = "3000")})
+public String paymentInfo_TimeOut(Integer id) {
+    //int age = 10/0;
+    try {
+        TimeUnit.SECONDS.sleep(3);
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+    return "线程池: " + Thread.currentThread().getName() +
+            "  paymentInfo_TimeOut,id: " + id + "\t" + "O(∩_∩)O哈哈~" +
+            "耗时(s)：3";
+}
+
+//用来善后的方法
+public String paymentInfo_TimeOutHandler(Integer id) {
+    return "线程池:  " + Thread.currentThread().getName() +
+            "  8001系统繁忙或者运行报错，请稍后再试,id:  " + id + "\t" + "o(╥﹏╥)o";
+}
+```
+
+上面故意制造两种异常:
+
+1. int age = 10/0，计算异常
+2. 我们能接受3秒钟，它运行5秒钟，超时异常。
+
+当前服务不可用了，做服务降级，兜底的方案都是paymentInfo_TimeOutHandler
+
+**主启动类激活**
+
+添加新注解@EnableCircuitBreaker （启用断路器）
+
+```java
+package com.eagle.springcloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.circuitbreaker.EnableCircuitBreaker;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+
+/**
+ * @ClassName: PaymentHystrixMain8001
+ * @author: Maybe
+ * @date: 2022/3/3  17:05
+ */
+@SpringBootApplication
+@EnableEurekaClient
+@EnableCircuitBreaker
+public class PaymentHystrixMain8001 {
+    public static void main(String[] args) {
+        SpringApplication.run(PaymentHystrixMain8001.class, args);
+    }
+}
+```
+
