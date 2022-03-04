@@ -3384,14 +3384,13 @@ Hystrix是一个用于处理分布式系统的**延迟**和**容错**的开源�
     */
    @SpringBootApplication
    @EnableEurekaClient
-   //@EnableHystrix //80客户端一般不用
    public class OrderHystrixMain80 {
        public static void main(String[] args) {
            SpringApplication.run(OrderHystrixMain80.class, args);
        }
    }
    ```
-
+   
 5. 业务
 
    ```java
@@ -3557,4 +3556,368 @@ public class PaymentHystrixMain8001 {
     }
 }
 ```
+
+## Hystrix之服务降级订单侧fallback
+
+80订单微服务，也可以更好的保护自己，自己也依样画葫芦进行客户端降级保护
+
+题外话，切记 - 我们自己配置过的热部署方式对java代码的改动明显
+
+但对@HystrixCommand内属性的修改建议重启微服务
+
+YML
+
+```yaml
+#开启
+feign:
+  hystrix:
+    enabled: true
+```
+
+主启动
+
+```java
+package com.eagle.springcloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+import org.springframework.cloud.netflix.hystrix.EnableHystrix;
+
+/**
+ * @ClassName: OrderHystrixMain80
+ * @author: Maybe
+ * @date: 2022/3/3  21:34
+ */
+@SpringBootApplication
+@EnableEurekaClient
+@EnableHystrix
+public class OrderHystrixMain80 {
+    public static void main(String[] args) {
+        SpringApplication.run(OrderHystrixMain80.class, args);
+    }
+}
+```
+
+直接在controller的方法上面加入Hystrix的兜底方法
+
+```java
+@GetMapping("/consumer/payment/hystrix/timeout/{id}")
+@HystrixCommand(fallbackMethod = "paymentTimeOutFallbackMethod", commandProperties = {
+    @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "1500")
+})
+public String paymentInfo_TimeOut(@PathVariable("id") Integer id) {
+    return paymentHystrixService.paymentInfo_TimeOut(id);
+}
+
+/**
+ * paymentInfo_TimeOut的兜底方法
+ *
+ * @param id
+ * @return
+ */
+public String paymentTimeOutFallbackMethod(@PathVariable("id") Integer id) {
+    return "我是消费者80,对方支付系统繁忙请10秒钟后再试或者自己运行出错请检查自己,o(╥﹏╥)o";
+}
+```
+
+## Hystrix之全局服务降级DefaultProperties
+
+**目前问题1** 每个业务方法对应一个兜底的方法，代码膨胀
+
+**解决方法**
+
+1. 每个方法配置一个服务降级方法，技术上可以，但是不聪明
+2. 除了个别重要核心业务有专属，其它普通的可以通过`@DefaultProperties(defaultFallback = “”)`统一跳转到统一处理结果页面通用的和独享的各自分开，避免了代码膨胀，合理减少了代码量
+
+```java
+package com.eagle.springcloud.controller;
+
+import com.eagle.springcloud.service.PaymentHystrixService;
+import com.netflix.hystrix.contrib.javanica.annotation.DefaultProperties;
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.annotation.Resource;
+
+/**
+ * @ClassName: OrderHystirxController
+ * @author: Maybe
+ * @date: 2022/3/3  21:41
+ */
+@RestController
+@Slf4j
+@DefaultProperties(defaultFallback = "payment_Global_FallbackMethod")
+public class OrderHystirxController {
+    @Resource
+    private PaymentHystrixService paymentHystrixService;
+
+    @Value("${server.port}")
+    private String serverPort;
+
+    @GetMapping("/consumer/payment/hystrix/ok/{id}")
+    public String paymentInfo_OK(@PathVariable("id") Integer id) {
+        return paymentHystrixService.paymentInfo_OK(id);
+    }
+
+    @GetMapping("/consumer/payment/hystrix/timeout/{id}")
+//    @HystrixCommand(fallbackMethod = "paymentTimeOutFallbackMethod", commandProperties = {
+//            @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "1500")
+//    })
+    @HystrixCommand
+    public String paymentInfo_TimeOut(@PathVariable("id") Integer id) {
+        return paymentHystrixService.paymentInfo_TimeOut(id);
+    }
+
+    /**
+     * paymentInfo_TimeOut的兜底方法
+     *
+     * @param id
+     * @return
+     */
+    public String paymentTimeOutFallbackMethod(@PathVariable("id") Integer id) {
+        return "我是消费者80,对方支付系统繁忙请10秒钟后再试或者自己运行出错请检查自己,o(╥﹏╥)o";
+    }
+
+    /**
+     * 全局的兜底方法
+     *
+     * @return
+     */
+    public String payment_Global_FallbackMethod() {
+        return "Global异常处理信息，请稍后再试，/(ㄒoㄒ)/~~";
+    }
+}
+```
+
+## Hystrix之通配服务降级FeignFallback
+
+**目前问题2** 统一和自定义的分开，代码混乱
+
+**服务降级，客户端去调用服务端，碰上服务端宕机或关闭**
+
+本次案例服务降级处理是在客户端80实现完成的，与服务端8001没有关系，只需要为Feign客户端定义的接口添加一个服务降级处理的实现类即可实现解耦
+
+**未来我们要面对的异常**
+
+- 运行出错
+- 超时
+- 宕机
+
+**修改cloud-consumer-feign-hystrix-order80**
+
+根据cloud-consumer-feign-hystrix-order80已经有的PaymentHystrixService接口，重新新建一个类(PaymentFallbackService)实现该接口，统一为接口里面的方法进行异常处理
+
+PaymentFallbackService类实现PaymentHystrixService接口
+
+```java
+package com.eagle.springcloud.service;
+
+import org.springframework.stereotype.Component;
+
+/**
+ * @ClassName: PaymentFallbackService
+ * @author: Maybe
+ * @date: 2022/3/4  15:45
+ */
+@Component
+public class PaymentFallbackService implements PaymentHystrixService {
+    @Override
+    public String paymentInfo_OK(Integer id) {
+        return "-----PaymentFallbackService fall back-paymentInfo_OK ,o(╥﹏╥)o";
+    }
+
+    @Override
+    public String paymentInfo_TimeOut(Integer id) {
+        return "-----PaymentFallbackService fall back-paymentInfo_TimeOut ,o(╥﹏╥)o";
+    }
+}
+```
+
+PaymentHystrixService接口的的@FeignClient注解上加入兜底的实现类
+
+```java
+package com.eagle.springcloud.service;
+
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+
+/**
+ * @ClassName: PaymentHystrixService
+ * @author: Maybe
+ * @date: 2022/3/4  15:05
+ */
+@Component
+@FeignClient(value = "CLOUD-PROVIDER-HYSTRIX-PAYMENT",
+        fallback = PaymentFallbackService.class)//指定PaymentFallbackService的兜底类
+public interface PaymentHystrixService {
+    @GetMapping("/payment/hystrix/ok/{id}")
+    String paymentInfo_OK(@PathVariable("id") Integer id);
+
+    @GetMapping("/payment/hystrix/timeout/{id}")
+    String paymentInfo_TimeOut(@PathVariable("id") Integer id);
+}
+```
+
+**测试**
+
+单个eureka先启动7001
+
+PaymentHystrixMain8001启动
+
+正常访问测试 - http://localhost/consumer/payment/hystrix/ok/1
+
+故意关闭微服务8001
+
+客户端自己调用提示 - 此时服务端provider已经down了，但是我们做了服务降级处理，让客户端在服务端不可用时也会获得提示信息而不会挂起耗死服务器。
+
+## Hystrix之服务熔断理论
+
+断路器，相当于保险丝。
+
+**熔断机制概述**
+
+熔断机制是应对雪崩效应的一种微服务链路保护机制。当扇出链路的某个微服务出错不可用或者响应时间太长时，会进行服务的降级，进而熔断该节点微服务的调用，快速返回错误的响应信息。**当检测到该节点微服务调用响应正常后，恢复调用链路**。
+
+在Spring Cloud框架里，熔断机制通过Hystrix实现。Hystrix会监控微服务间调用的状况，当失败的调用到一定阈值，缺省是5秒内20次调用失败，就会启动熔断机制。熔断机制的注解是@HystrixCommand。
+
+[Martin Fowler的相关论文](https://martinfowler.com/bliki/CircuitBreaker.html)
+
+ <img src="img(SpringCloud)/state.png" alt="img" style="zoom:80%;" />
+
+## Hystrix之服务熔断案例
+
+[Hutool国产工具类](https://hutool.cn/)
+
+修改cloud-provider-hystrix-payment8001
+
+```java
+package com.eagle.springcloud.service;
+
+import cn.hutool.core.util.IdUtil;
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixProperty;
+import org.springframework.stereotype.Service;
+
+import java.util.concurrent.TimeUnit;
+
+/**
+ * @ClassName: PaymentService
+ * @author: Maybe
+ * @date: 2022/3/3  17:06
+ */
+@Service
+public class PaymentService {
+    
+    ...
+
+    //=====服务熔断
+    @HystrixCommand(fallbackMethod = "paymentCircuitBreaker_fallback", commandProperties = {
+            @HystrixProperty(name = "circuitBreaker.enabled", value = "true"),// 是否开启断路器
+            @HystrixProperty(name = "circuitBreaker.requestVolumeThreshold", value = "10"),// 请求次数
+            @HystrixProperty(name = "circuitBreaker.sleepWindowInMilliseconds", value = "10000"), // 时间窗口期
+            @HystrixProperty(name = "circuitBreaker.errorThresholdPercentage", value = "60"),// 失败率达到多少后跳闸
+    })
+    public String paymentCircuitBreaker(Integer id) {
+        if (id < 0) {
+            throw new RuntimeException("******id 不能负数");
+        }
+        String serialNumber = IdUtil.simpleUUID();
+
+        return Thread.currentThread().getName() + "\t" + "调用成功，流水号: " + serialNumber;
+    }
+
+    public String paymentCircuitBreaker_fallback(Integer id) {
+        return "id 不能负数，请稍后再试，/(ㄒoㄒ)/~~   id: " + id;
+    }
+}
+```
+
+> The precise way that the circuit opening and closing occurs is as follows:
+>
+> 1. Assuming the volume across a circuit meets a certain threshold : `HystrixCommandProperties.circuitBreakerRequestVolumeThreshold()`
+> 2. And assuming that the error percentage, as defined above exceeds the error percentage defined in : `HystrixCommandProperties.circuitBreakerErrorThresholdPercentage()`
+> 3. Then the circuit-breaker transitions from CLOSED to OPEN.
+> 4. While it is open, it short-circuits all requests made against that circuit-breaker.
+> 5. After some amount of time (`HystrixCommandProperties.circuitBreakerSleepWindowInMilliseconds()`), the next request is let through. If it fails, the command stays OPEN for the sleep window. If it succeeds, it transitions to CLOSED and the logic in 1) takes over again.
+
+其中commandProperties中的参数可见 `HystrixCommandProperties` 类
+
+```java
+package com.netflix.hystrix;
+
+...
+
+public abstract class HystrixCommandProperties {
+    private static final Logger logger = LoggerFactory.getLogger(HystrixCommandProperties.class);
+
+    /* defaults */
+    /* package */ static final Integer default_metricsRollingStatisticalWindow = 10000;// default => statisticalWindow: 10000 = 10 seconds (and default of 10 buckets so each bucket is 1 second)
+    private static final Integer default_metricsRollingStatisticalWindowBuckets = 10;// default => statisticalWindowBuckets: 10 = 10 buckets in a 10 second window so each bucket is 1 second
+    private static final Integer default_circuitBreakerRequestVolumeThreshold = 20;// default => statisticalWindowVolumeThreshold: 20 requests in 10 seconds must occur before statistics matter
+    private static final Integer default_circuitBreakerSleepWindowInMilliseconds = 5000;// default => sleepWindow: 5000 = 5 seconds that we will sleep before trying again after tripping the circuit
+    private static final Integer default_circuitBreakerErrorThresholdPercentage = 50;// default => errorThresholdPercentage = 50 = if 50%+ of requests in 10 seconds are failures or latent then we will trip the circuit
+    private static final Boolean default_circuitBreakerForceOpen = false;// default => forceCircuitOpen = false (we want to allow traffic)
+    /* package */ static final Boolean default_circuitBreakerForceClosed = false;// default => ignoreErrors = false 
+    private static final Integer default_executionTimeoutInMilliseconds = 1000; // default => executionTimeoutInMilliseconds: 1000 = 1 second
+    private static final Boolean default_executionTimeoutEnabled = true;
+
+    ...
+}
+```
+
+controller
+
+```java
+package com.eagle.springcloud.controller;
+
+import com.eagle.springcloud.service.PaymentService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.annotation.Resource;
+
+/**
+ * @ClassName: PaymentController
+ * @author: Maybe
+ * @date: 2022/3/3  17:14
+ */
+@RestController
+@Slf4j
+public class PaymentController {
+    @Resource
+    private PaymentService paymentService;
+
+    @Value("${server.port}")
+    private String serverPort;
+
+	...
+
+    @GetMapping("/payment/circuit/{id}")
+    public String paymentCircuitBreaker(@PathVariable("id") Integer id){
+        return paymentService.paymentCircuitBreaker(id);
+    }
+}
+```
+
+**测试**
+
+自测cloud-provider-hystrix-payment8001
+
+正确 - http://localhost:8001/payment/circuit/1
+
+错误 - http://localhost:8001/payment/circuit/-1
+
+多次错误，再来次正确，但错误得显示
+
+重点测试 - 多次错误，然后慢慢正确，发现刚开始不满足条件，就算是正确的访问地址也不能进行
 
