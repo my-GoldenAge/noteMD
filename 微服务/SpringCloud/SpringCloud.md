@@ -4269,3 +4269,341 @@ public class HystrixDashboardMain9001 {
 
 <img src="img(SpringCloud)/7fe0003d738028e6e20a3bf8f802cd2d.png" alt="img" style="zoom:80%;" />
 
+# 11、GateWay网关
+
+## GateWay是什么
+
+[上一代zuul 1.x官网](https://github.com/Netflix/zuul/wiki)
+
+[Gateway官网](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/)
+
+**概述**
+
+Cloud全家桶中有个很重要的组件就是网关，在1.x版本中都是采用的Zuul网关;
+
+但在2.x版本中，zuul的升级一直跳票，SpringCloud最后自己研发了一个网关替代Zuul，那就是SpringCloud Gateway—句话：gateway是原zuul1.x版的替代
+
+<img src="img(SpringCloud)/54b61d819aa1630bc61732de340b55b4.png" alt="img" style="zoom:80%;" />
+
+Gateway是在Spring生态系统之上构建的API网关服务，基于Spring 5，Spring Boot 2和Project Reactor等技术。
+
+Gateway旨在提供一种简单而有效的方式来对API进行路由，以及提供一些强大的过滤器功能，例如:熔断、限流、重试等。
+
+SpringCloud Gateway是Spring Cloud的一个全新项目，基于Spring 5.0+Spring Boot 2.0和Project Reactor等技术开发的网关，它旨在为微服务架构提供—种简单有效的统一的API路由管理方式。
+
+SpringCloud Gateway作为Spring Cloud 生态系统中的网关，目标是替代Zuul，在Spring Cloud 2.0以上版本中，没有对新版本的Zul 2.0以上最新高性能版本进行集成，仍然还是使用的Zuul 1.x非Reactor模式的老版本。而为了提升网关的性能，**SpringCloud Gateway是基于WebFlux框架实现的，而WebFlux框架底层则使用了高性能的Reactor模式通信框架Netty。**
+
+Spring Cloud Gateway的目标提供统一的路由方式且基于 Filter链的方式提供了网关基本的功能，例如:安全，监控/指标，和限流。
+
+**作用**
+
+- 方向代理
+- 鉴权
+- 流量控制
+- 熔断
+- 日志监控
+- …
+
+**微服务架构中网关的位置**
+
+ <img src="img(SpringCloud)/5877d4b9035ead9cd2d037609dceb442.png" alt="img" style="zoom:80%;" />
+
+## GateWay非阻塞异步模型
+
+有Zuull了怎么又出来Gateway？**我们为什么选择Gateway?**
+
+1. netflix不太靠谱，zuul2.0一直跳票，迟迟不发布。
+   1. 一方面因为Zuul1.0已经进入了维护阶段，而且Gateway是SpringCloud团队研发的，是亲儿子产品，值得信赖。而且很多功能Zuul都没有用起来也非常的简单便捷。
+   2. Gateway是基于异步非阻塞模型上进行开发的，性能方面不需要担心。虽然Netflix早就发布了最新的Zuul 2.x，但Spring Cloud貌似没有整合计划。而且Netflix相关组件都宣布进入维护期；不知前景如何?
+   3. 多方面综合考虑Gateway是很理想的网关选择。
+2. SpringCloud Gateway具有如下特性
+   1. 基于Spring Framework 5，Project Reactor和Spring Boot 2.0进行构建；
+   2. 动态路由：能够匹配任何请求属性；
+   3. 可以对路由指定Predicate (断言)和Filter(过滤器)；
+   4. 集成Hystrix的断路器功能；
+   5. 集成Spring Cloud 服务发现功能；
+   6. 易于编写的Predicate (断言)和Filter (过滤器)；
+   7. 请求限流功能；
+   8. 支持路径重写。
+3. SpringCloud Gateway与Zuul的区别
+   1. 在SpringCloud Finchley正式版之前，Spring Cloud推荐的网关是Netflix提供的Zuul。
+   2. Zuul 1.x，是一个基于阻塞I/O的API Gateway。
+   3. Zuul 1.x基于Servlet 2.5使用阻塞架构它不支持任何长连接(如WebSocket)Zuul的设计模式和Nginx较像，每次I/О操作都是从工作线程中选择一个执行，请求线程被阻塞到工作线程完成，但是差别是Nginx用C++实现，Zuul用Java实现，而JVM本身会有第-次加载较慢的情况，使得Zuul的性能相对较差。
+   4. Zuul 2.x理念更先进，想基于Netty非阻塞和支持长连接，但SpringCloud目前还没有整合。Zuul .x的性能较Zuul 1.x有较大提升。在性能方面，根据官方提供的基准测试,Spring Cloud Gateway的RPS(每秒请求数)是Zuul的1.6倍。
+   5. Spring Cloud Gateway建立在Spring Framework 5、Project Reactor和Spring Boot2之上，使用非阻塞API。
+   6. Spring Cloud Gateway还支持WebSocket，并且与Spring紧密集成拥有更好的开发体验
+
+**Zuul1.x模型**
+
+Springcloud中所集成的Zuul版本，采用的是Tomcat容器，使用的是传统的Serviet IO处理模型。
+
+Servlet的生命周期？servlet由servlet container进行生命周期管理。
+
+- container启动时构造servlet对象并调用servlet init()进行初始化；
+- container运行时接受请求，并为每个请求分配一个线程（一般从线程池中获取空闲线程）然后调用service)；
+- container关闭时调用servlet destory()销毁servlet。
+
+ <img src="img(SpringCloud)/b71ecbfb29c939615c988123a0704306.png" alt="img" style="zoom:80%;" />
+
+上述模式的**缺点**：
+
+Servlet是一个简单的网络IO模型，当请求进入Servlet container时，Servlet container就会为其绑定一个线程，在**并发不高的场景下**这种模型是适用的。但是一旦高并发(如抽风用Jmeter压)，线程数量就会上涨，而线程资源代价是昂贵的（上线文切换，内存消耗大）严重影响请求的处理时间。在一些简单业务场景下，不希望为每个request分配一个线程，只需要1个或几个线程就能应对极大并发的请求，这种业务场景下servlet模型没有优势。
+
+所以Zuul 1.X是基于servlet之上的一个阻塞式处理模型，即Spring实现了处理所有request请求的一个servlet (DispatcherServlet)并由该servlet阻塞式处理处理。所以SpringCloud Zuul无法摆脱servlet模型的弊端。
+
+**Gateway模型**
+
+WebFlux是什么？[官方文档](https://docs.spring.io/spring-framework/docs/current/reference/html/web-reactive.html#spring-webflux)
+
+传统的Web框架，比如说: Struts2，SpringMVC等都是基于Servlet APl与Servlet容器基础之上运行的。
+
+但是在Servlet3.1之后有了异步非阻塞的支持。而**WebFlux是一个典型非阻塞异步的框架**，它的核心是基于Reactor的相关API实现的。相对于传统的web框架来说，它可以运行在诸如Netty，Undertow及支持Servlet3.1的容器上。非阻塞式+函数式编程(Spring 5必须让你使用Java 8)。
+
+Spring WebFlux是Spring 5.0 引入的新的响应式框架，区别于Spring MVC，它不需要依赖Servlet APl，它是完全异步非阻塞的，并且基于Reactor来实现响应式流规范。
+
+> **Spring Cloud Gateway** requires the Netty runtime provided by Spring Boot and **Spring Webflux**. It does not work in a traditional Servlet Container or when built as a WAR.
+
+## Gateway工作流程
+
+**三大核心概念**
+
+- Route(路由) - 路由是构建网关的基本模块,它由ID,目标URI,一系列的断言和过滤器组成,如断言为true则匹配该路由；
+- Predicate(断言) - 参考的是Java8的java.util.function.Predicate，开发人员可以匹配HTTP请求中的所有内容(例如请求头或请求参数),如果请求与断言相匹配则进行路由；
+- Filter(过滤) - 指的是Spring框架中GatewayFilter的实例,使用过滤器,可以在请求被路由前或者之后对请求进行修改。
+
+web请求，通过一些匹配条件，定位到真正的服务节点。并在这个转发过程的前后，进行一些精细化控制。
+
+predicate就是我们的匹配条件；而fliter，就可以理解为一个无所不能的拦截器。有了这两个元素，再加上目标uri，就可以实现一个具体的路由了
+
+**Gateway工作流程**
+
+[官网总结](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#gateway-how-it-works)
+
+ <img src="img(SpringCloud)/62be54501c6e2b95620b79cc918a2e9a.png" alt="img" style="zoom:80%;" />
+
+> Clients make requests to Spring Cloud Gateway. If the Gateway Handler Mapping determines that a request matches a route, it is sent to the Gateway Web Handler. This handler runs the request through a filter chain that is specific to the request. The reason the filters are divided by the dotted line is that filters can run logic both before and after the proxy request is sent. All “pre” filter logic is executed. Then the proxy request is made. After the proxy request is made, the “post” filter logic is run. 
+
+客户端向Spring Cloud Gateway发出请求。然后在Gateway Handler Mapping 中找到与请求相匹配的路由，将其发送到GatewayWeb Handler。
+
+Handler再通过指定的过滤器链来将请求发送到我们实际的服务执行业务逻辑，然后返回。
+
+过滤器之间用虚线分开是因为过滤器可能会在发送代理请求之前(“pre”)或之后(“post"）执行业务逻辑。
+
+Filter在“pre”类型的过滤器可以做参数校验、权限校验、流量监控、日志输出、协议转换等，在“post”类型的过滤器中可以做响应内容、响应头的修改，日志的输出，流量监控等有着非常重要的作用。
+
+**核心逻辑**：路由转发 + 执行过滤器链。
+
+## Gateway9527搭建
+
+新建Module - cloud-gateway-gateway9527
+
+POM
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-gateway-gateway9527</artifactId>
+
+    <dependencies>
+        <!--gateway-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <!-- 引入自己定义的api通用包，可以使用Payment支付Entity -->
+        <dependency>
+            <groupId>com.eagle.springcloud</groupId>
+            <artifactId>cloud-api-commons</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!--通用-->
+        <!--在gateway网关中不需要spring-boot-starter-web和spring-boot-starter-actuator-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+yaml
+
+```yaml
+server:
+  port: 9527
+
+spring:
+  application:
+    name: cloud-gateway
+  #############################新增网关配置###########################
+  cloud:
+    gateway:
+      routes:
+        - id: payment_routh #payment_route    #路由的ID，没有固定规则但要求唯一，建议配合服务名
+          uri: http://localhost:8001          #匹配后提供服务的路由地址
+          #uri: lb://cloud-payment-service #匹配后提供服务的路由地址
+          predicates:
+            - Path=/payment/get/**         # 断言，路径相匹配的进行路由
+
+        - id: payment_routh2 #payment_route    #路由的ID，没有固定规则但要求唯一，建议配合服务名
+          uri: http://localhost:8001          #匹配后提供服务的路由地址
+          #uri: lb://cloud-payment-service #匹配后提供服务的路由地址
+          predicates:
+            - Path=/payment/lb/**         # 断言，路径相匹配的进行路由
+  ##################################################################
+
+eureka:
+  instance:
+    hostname: cloud-gateway-service
+  client: #服务提供者provider注册进eureka服务列表内
+    service-url:
+      register-with-eureka: true
+      fetch-registry: true
+      defaultZone: http://eureka7001.com:7001/eureka
+
+```
+
+主启动
+
+```java
+package com.eagle.springcloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+
+/**
+ * @ClassName: GateWayMain9527
+ * @author: Maybe
+ * @date: 2022/3/6  16:50
+ */
+@SpringBootApplication
+@EnableEurekaClient
+public class GateWayMain9527 {
+    public static void main(String[] args) {
+        SpringApplication.run(GateWayMain9527.class, args);
+    }
+}
+```
+
+无业务
+
+测试
+
+- 启动7001
+
+- 启动8001-cloud-provider-payment8001
+
+- 启动9527网关
+
+- 访问说明
+  - 添加网关前 - http://localhost:8001/payment/get/1
+  - 添加网关后 - http://localhost:9527/payment/get/1
+  - 两者访问成功，返回相同结果
+
+## Gateway配置路由的另一种方式
+
+**用配置类的RouteLocator注入Bean**
+
+[官方案例](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#modifying-the-way-remote-addresses-are-resolved)
+
+```java
+package com.eagle.springcloud.config;
+
+import org.springframework.cloud.gateway.route.RouteLocator;
+import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * @ClassName: GateWayConfig
+ * @author: Maybe
+ * @date: 2022/3/6  16:56
+ */
+@Configuration
+public class GateWayConfig {
+    @Bean
+    public RouteLocator customRouteLocator(RouteLocatorBuilder routeLocatorBuilder) {
+        RouteLocatorBuilder.Builder routes = routeLocatorBuilder.routes();
+        routes.route("bilibili",
+                r -> r.path("/bilibili")
+                        .uri("https://www.bilibili.com/")).build();
+
+        RouteLocator build = routes.build();
+        return build;
+    }
+}
+```
+
+
+
+## GateWay配置动态路由
+
+默认情况下Gateway会根据注册中心注册的服务列表，以注册中心上微服务名为路径创建**动态路由进行转发，从而实现动态路由的功能**（而不是不写死一个地址，因为可能是集群）。
+
+只需修改yaml即可
+
+1.   将spring.cloud.gateway.discovery.locator.enabled改为true，开启从注册中心动态创建路由的功能，利用微服务名进行路由
+2. 将uri改为微服务名称，**但要以lb（loadbalance）为协议开头**
+
+```yaml
+...
+
+spring:
+  application:
+    name: cloud-gateway
+  #############################新增网关配置###########################
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true #开启从注册中心动态创建路由的功能，利用微服务名进行路由
+      routes:
+        - id: payment_routh #payment_route    #路由的ID，没有固定规则但要求唯一，建议配合服务名
+          #uri: http://localhost:8001          #匹配后提供服务的路由地址
+          uri: lb://cloud-payment-service #匹配后提供服务的路由地址
+          predicates:
+            - Path=/payment/get/**         # 断言，路径相匹配的进行路由
+
+        - id: payment_routh2 #payment_route    #路由的ID，没有固定规则但要求唯一，建议配合服务名
+          #uri: http://localhost:8001          #匹配后提供服务的路由地址
+          uri: lb://cloud-payment-service #匹配后提供服务的路由地址
+          predicates:
+            - Path=/payment/lb/**         # 断言，路径相匹配的进行路由
+
+...
+```
+
+**测试**
+
+浏览器输入 - http://localhost:9527/payment/lb
+
+结果
+
+不停刷新页面，8001/8002两个端口切换。
+
