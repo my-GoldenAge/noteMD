@@ -4607,3 +4607,202 @@ spring:
 
 不停刷新页面，8001/8002两个端口切换。
 
+## GateWay常用的Predicate
+
+[官方文档](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#gateway-request-predicates-factories)
+
+**Route Predicate Factories这个是什么**
+
+> Spring Cloud Gateway matches routes as part of the Spring WebFlux HandlerMapping infrastructure. Spring Cloud Gateway includes many built-in **route predicate factories**. All of these predicates match on different attributes of the HTTP request. You can combine multiple route predicate factories with logical and statements.
+
+Spring Cloud Gateway将路由匹配作为Spring WebFlux HandlerMapping基础架构的一部分。
+
+Spring Cloud Gateway包括许多内置的Route Predicate工厂。所有这些Predicate都与HTTP请求的不同属性匹配。多个RoutePredicate工厂可以进行组合。
+
+Spring Cloud Gateway创建Route 对象时，使用RoutePredicateFactory 创建 Predicate对象，Predicate 对象可以赋值给Route。Spring Cloud Gateway包含许多内置的Route Predicate Factories。
+
+所有这些谓词都匹配HTTP请求的不同属性。多种谓词工厂可以组合，并通过逻辑and。
+
+**常用的Route Predicate Factory**
+
+- The After Route Predicate Factory
+- The Before Route Predicate Factory
+- The Between Route Predicate Factory
+- The Cookie Route Predicate Factory
+- The Header Route Predicate Factory
+- The Host Route Predicate Factory
+- The Method Route Predicate Factory
+- The Path Route Predicate Factory
+- The Query Route Predicate Factory
+- The RemoteAddr Route Predicate Factory
+- The weight Route Predicate Factory
+
+**The After Route Predicate Factory**
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: after_route
+        uri: https://example.org
+        predicates:
+        # 这个时间后才能起效
+        - After=2017-01-20T17:42:47.789-07:00[America/Denver]
+```
+
+可以通过下述方法获得上述格式的时间戳字符串
+
+```java
+import java.time.ZonedDateTime;
+
+
+public class T2
+{
+    public static void main(String[] args)
+    {
+        ZonedDateTime zbj = ZonedDateTime.now(); // 默认时区
+        System.out.println(zbj);
+
+       //2021-02-22T15:51:37.485+08:00[Asia/Shanghai]
+    }
+}
+```
+
+**The Between Route Predicate Factory**
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: between_route
+        uri: https://example.org
+        # 两个时间点之间
+        predicates:
+        - Between=2017-01-20T17:42:47.789-07:00[America/Denver], 2017-01-21T17:42:47.789-07:00[America/Denver]
+```
+
+**The Cookie Route Predicate Factory**
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: cookie_route
+        uri: https://example.org
+        predicates:
+        - Cookie=chocolate, ch.p
+```
+
+cookie路由谓词工厂接受两个参数：**cookie名称和正则表达式**。此谓词匹配具有给定名称且其值与正则表达式匹配的cookie。
+
+也就是cookie中要带有键为其指定的名称，值满足该键指定的正则表达式
+
+**The Header Route Predicate Factory**
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: header_route
+        uri: https://example.org
+        predicates:
+        - Header=X-Request-Id, \d+
+```
+
+其他的都一样
+
+**说白了，Predicate就是为了实现一组匹配规则，让请求过来找到对应的Route进行处理。**
+
+## GateWay的Filter
+
+[官方文档](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#gatewayfilter-factories)
+
+> Route filters allow the modification of the incoming HTTP request or outgoing HTTP response in some manner. Route filters are scoped to a particular route. Spring Cloud Gateway includes many built-in GatewayFilter Factories.
+
+路由过滤器可用于修改进入的HTTP请求和返回的HTTP响应，路由过滤器只能指定路由进行使用。Spring Cloud Gateway内置了多种路由过滤器，他们都由GatewayFilter的工厂类来产生。
+
+Spring Cloud Gateway的Filter分类：
+
+- 按生命周期分：
+  - pre
+  - post
+- 按种类（具体看官方文档）：
+  - GatewayFilter - 有31种
+  - GlobalFilter - 有10种
+
+其实按其种类分写在yaml里，要记住好多参数例如：
+
+<img src="img(SpringCloud)/image-20220307181833749.png" alt="image-20220307181833749" style="zoom:80%;" />
+
+所以更偏向于实现`GlobalFilter`，`Ordered`这两个接口来自定义自己的过滤器（就和javaweb那的过滤器差不多），例如：
+
+GateWay9527项目添加MyLogGateWayFilter类：
+
+```java
+package com.eagle.springcloud.gatewayfilter;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.util.Date;
+
+/**
+ * @ClassName: MyLogGateWayFilter
+ * @author: Maybe
+ * @date: 2022/3/7  18:22
+ */
+@Component
+@Slf4j
+public class MyLogGateWayFilter implements GlobalFilter, Ordered {
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        log.info("***********come in MyLogGateWayFilter:  " + new Date());
+
+        String uname = exchange.getRequest().getQueryParams().getFirst("uname");
+
+        if (uname == null) {
+            log.info("*******用户名为null，非法用户，o(╥﹏╥)o");
+            exchange.getResponse().setStatusCode(HttpStatus.NOT_ACCEPTABLE);
+            return exchange.getResponse().setComplete();
+        }
+
+        return chain.filter(exchange);
+    }
+
+    /**
+     * 表示加载该过滤器的顺序，值越小顺序越前
+     * @return
+     */
+    @Override
+    public int getOrder() {
+        return 0;
+    }
+}
+```
+
+测试：
+
+启动：
+
+- EurekaMain7001
+
+- PaymentMain8001
+- GateWayMain9527
+- PaymentMain8002
+
+浏览器输入：
+
+- http://localhost:9527/payment/lb - 反问异常
+- http://localhost:9527/payment/lb?uname=abc - 正常反问
+
