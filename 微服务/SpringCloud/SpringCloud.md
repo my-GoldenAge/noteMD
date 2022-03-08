@@ -4806,3 +4806,5 @@ public class MyLogGateWayFilter implements GlobalFilter, Ordered {
 - http://localhost:9527/payment/lb - 反问异常
 - http://localhost:9527/payment/lb?uname=abc - 正常反问
 
+# 12、Config分布式配置中心
+
