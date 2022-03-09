@@ -4828,7 +4828,7 @@ SpringCloud Config分为**服务端**和**客户端**两部分。
 
 - 服务端也称为分布式配置中心，它是一个独立的微服务应用，用来连接配置服务器并为客户端提供获取配置信息，加密/解密信息等访问接口。
 
-- 客户端则是通过指定的配置中心来管理应用资源，以及与业务相关的配置内容，并在启动的时候从配置中心获取和加载配置信息配置**服务器默认采用git来存储配置信息**，这样就有助于对环境配置进行版本管理，并且可以通过git客户端工具来方便的管理和访问配置内容。
+- 客户端则是通过指定的配置中心来管理应用资源，以及与业务相关的配置内容，并在启动的时候从配置中心获取和加载配置信息，**配置服务器默认采用git来存储配置信息**，这样就有助于对环境配置进行版本管理，并且可以通过git客户端工具来方便的管理和访问配置内容。
 
 **能干嘛**
 
@@ -4874,6 +4874,8 @@ config:
 config:
   info: "master branch,springcloud-config/config-test.yml version=1" 
 ```
+
+**注意**：名字必须要符合 {application}-{profile} 的规则，如上
 
 新建Module模块cloud-config-center-3344，它即为Cloud的配置中心模块CloudConfig Center
 
@@ -5036,3 +5038,228 @@ config:
 - profiles：环境(dev/test/prod)
 
 成功实现了用SpringCloud Config通过GitHub获取配置信息
+
+## Config客户端配置与测试
+
+新建cloud-config-client-3355
+
+POM
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-config-client-3355</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+**bootstrap.yml**
+
+applicaiton.yml是用户级的资源配置项
+
+bootstrap.yml是系统级的，优先级更加高
+
+Spring Cloud会创建一个Bootstrap Context，作为Spring应用的Application Context的父上下文。
+
+初始化的时候，BootstrapContext负责从外部源加载配置属性并解析配置。这两个上下文共享一个从外部获取的Environment。
+
+Bootstrap属性有高优先级，默认情况下，它们不会被本地配置覆盖。Bootstrap context和Application Context有着不同的约定，所以新增了一个bootstrap.yml文件，保证Bootstrap Context和Application Context配置的分离。
+
+要将Client模块下的application.yml文件改为bootstrap.yml,这是很关键的，因为bootstrap.yml是比application.yml先加载的。bootstrap.yml优先级高于application.yml。
+
+```yaml
+server:
+  port: 3355
+
+spring:
+  application:
+    name: config-client
+  cloud:
+    #Config客户端配置
+    config:
+      label: master #分支名称
+      name: config #配置文件名称
+      profile: dev #读取后缀名称
+      uri: http://localhost:3344 #配置中心地址k
+      #上述4个综合：master分支上config-dev.yml的配置文件被读取http://config-3344.com:3344/master/config-dev.yml
+
+#服务注册到eureka地址
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:7001/eureka
+```
+
+主启动
+
+```java
+package com.eagle.springcloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+
+/**
+ * @ClassName: ConfigClientMain3355
+ * @author: Maybe
+ * @date: 2022/3/9  20:03
+ */
+@SpringBootApplication
+@EnableEurekaClient
+public class ConfigClientMain3355 {
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigClientMain3355.class, args);
+    }
+}
+```
+
+业务
+
+```java
+package com.eagle.springcloud.controller;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * @ClassName: ConfigClientController
+ * @author: Maybe
+ * @date: 2022/3/9  20:10
+ */
+@RestController
+@RefreshScope
+public class ConfigClientController {
+    @Value("${config.info}")//这里的config.info会从config服务端配置中心获取（也就是从git那里获取）
+    private String configInfo;
+
+    @GetMapping("/configInfo")
+    public String getConfigInfo() {
+        return configInfo;
+    }
+}
+```
+
+**测试**
+
+- 启动Config配置中心3344微服务并自测
+  - http://config-3344.com:3344/master/config-prod.yml
+  - http://config-3344.com:3344/master/config-dev.yml
+- 启动3355作为Client准备访问
+  - http://localhost:3355/configlnfo
+
+**成功实现了客户端3355访问SpringCloud Config3344通过Git获取配置信息，可问题随之而来**
+
+**分布式配置的动态刷新问题**
+
+- Linux运维修改GitHub上的配置文件内容做调整
+- 刷新3344，发现ConfigServer配置中心立刻响应
+- 刷新3355，发现ConfigClient客户端没有任何响应
+- 3355没有变化除非自己重启或者重新加载
+- 难到每次运维修改配置文件，客户端都需要重启??噩梦
+
+## Config动态刷新之手动版
+
+避免每次更新配置都要重启客户端微服务3355
+
+**动态刷新步骤**：
+
+修改3355模块
+
+POM引入actuator监控
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+```
+
+修改YML，添加暴露监控端口配置：
+
+```yaml
+# 暴露监控端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+```
+
+业务类Controller上加 `@RefreshScope` 注解
+
+测试
+
+此时修改github配置文件内容 -> 访问3344 -> 访问3355
+
+http://localhost:3355/configInfo
+
+**3355还是没有变化**
+
+还需要运维人员**发送Post请求刷新3355**
+
+```shell
+curl -X POST "http://localhost:3355/actuator/refresh"
+```
+
+再次测试
+
+http://localhost:3355/configInfo
+
+3355**改了**。
+
+成功实现了客户端3355刷新到最新配置内容，避免了服务重启
+
+想想还有什么问题?
+
+- 假如有多个微服务客户端3355/3366/3377
+- 每个微服务都要执行—次post请求，手动刷新?
+- 可否广播，一次通知，处处生效?
+- 我们想大范围的自动刷新，求方法
+
