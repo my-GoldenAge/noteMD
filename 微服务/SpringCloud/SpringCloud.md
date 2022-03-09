@@ -4806,5 +4806,233 @@ public class MyLogGateWayFilter implements GlobalFilter, Ordered {
 - http://localhost:9527/payment/lb - 反问异常
 - http://localhost:9527/payment/lb?uname=abc - 正常反问
 
-# 12、Config分布式配置中心
+# 12、SpringCloud config分布式配置中心
 
+## Config分布式配置中心介绍
+
+**分布式系统面临的配置问题**
+
+微服务意味着要将单体应用中的业务拆分成一个个子服务，每个服务的粒度相对较小，因此系统中会出现大量的服务。由于每个服务都需要必要的配置信息才能运行，所以一套集中式的、动态的配置管理设施是必不可少的。
+
+SpringCloud提供了ConfigServer来解决这个问题，我们每一个微服务自己带着一个application.yml，上百个配置文件的管理.……
+
+**是什么**
+
+ <img src="img(SpringCloud)/d5462e3b8c3a063561f5f8fc7fde327e.png" alt="img" style="zoom:80%;" />
+
+SpringCloud Config为微服务架构中的微服务提供集中化的外部配置支持，配置服务器为各个不同微服务应用的所有环境提供了一个中心化的外部配置。
+
+**怎么玩**
+
+SpringCloud Config分为**服务端**和**客户端**两部分。
+
+- 服务端也称为分布式配置中心，它是一个独立的微服务应用，用来连接配置服务器并为客户端提供获取配置信息，加密/解密信息等访问接口。
+
+- 客户端则是通过指定的配置中心来管理应用资源，以及与业务相关的配置内容，并在启动的时候从配置中心获取和加载配置信息配置**服务器默认采用git来存储配置信息**，这样就有助于对环境配置进行版本管理，并且可以通过git客户端工具来方便的管理和访问配置内容。
+
+**能干嘛**
+
+- 集中管理配置文件
+- 不同环境不同配置，动态化的配置更新，分环境部署比如dev/test/prod/beta/release
+- 运行期间动态调整配置，不再需要在每个服务部署的机器上编写配置文件，服务会向配置中心统一拉取配置自己的信息
+- 当配置发生变动时，服务不需要重启即可感知到配置的变化并应用新的配置
+- 将配置信息以REST接口的形式暴露 - post/crul访问刷新即可…
+
+**与GitHub整合配置**
+
+由于SpringCloud Config默认使用Git来存储配置文件(也有其它方式,比如支持SVN和本地文件)，但最推荐的还是Git，而且使用的是http/https访问的形式。
+
+[官网](https://cloud.spring.io/spring-cloud-static/spring-cloud-config/2.2.1.RELEASE/reference/html/)
+
+## Config配置总控中心搭建
+
+用你自己的账号在GitHub（或者Gitee都行）上新建一个名为springcloud-config的新Repository。
+
+由上一步获得刚新建的git地址 - `https://gitee.com/tdcqAme/springcloud-config.git`。
+
+本地硬盘新建springcloud-config的文件夹，git初始化仓库并clone。
+
+在springcloud-config的文件夹种创建三个配置文件（为本次教学使用的）,随后`git add .`，`git commit -m "sth"`等一系列上传操作上传到springcloud-config的新Repository。
+
+- config-dev.yml
+
+```yaml
+config:
+  info: "master branch,springcloud-config/config-dev.yml version=7"
+```
+
+- config-prod.yml
+
+```yaml
+config:
+  info: "master branch,springcloud-config/config-prod.yml version=1"
+```
+
+- config-test.yml
+
+```yaml
+config:
+  info: "master branch,springcloud-config/config-test.yml version=1" 
+```
+
+新建Module模块cloud-config-center-3344，它即为Cloud的配置中心模块CloudConfig Center
+
+POM
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-config-center-3344</artifactId>
+
+    <dependencies>
+        <!--添加消息总线RabbitMQ支持-->
+<!--        <dependency>-->
+<!--            <groupId>org.springframework.cloud</groupId>-->
+<!--            <artifactId>spring-cloud-starter-bus-amqp</artifactId>-->
+<!--        </dependency>-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-config-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+yaml
+
+```yaml
+server:
+  port: 3344
+
+spring:
+  application:
+    name:  cloud-config-center #注册进Eureka服务器的微服务名
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://gitee.com/tdcqAme/springcloud-config.git #GitHub上面的git仓库名字
+          #搜索目录
+          search-paths:
+            - springcloud-config
+          force-pull: true
+          #如果仓库是私有的，需要安全连接到github仓库，要在application.yml中配置上自己github的用户名和密码
+#          username: 自己的github用户名
+#          password: 自己的github密码
+      #读取分支
+      label: master
+
+#服务注册到eureka地址
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:7001/eureka
+```
+
+主启动，要加个 `@EnableConfigServer` 注解
+
+```java
+package com.eagle.springcloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.config.server.EnableConfigServer;
+
+/**
+ * @ClassName: ConfigCenterMain3344
+ * @author: Maybe
+ * @date: 2022/3/9  13:50
+ */
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigCenterMain3344 {
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigCenterMain3344.class, args);
+    }
+}
+```
+
+测试通过Config微服务是否可以从GitHub上获取配置内容
+
+- 启动ConfigCenterMain3344
+- 浏览器防问 - http://localhost:3344/master/config-dev.yaml
+- 页面返回结果：
+
+```yaml
+config:
+  info: master branch,springcloud-config/config-dev.yml version=7
+```
+
+**配置读取规则**
+
+[官方文档](https://cloud.spring.io/spring-cloud-static/spring-cloud-config/2.2.1.RELEASE/reference/html/#_quick_start)
+
+- /{label}/{application}-{profile}.yml（推荐）
+  - master分支
+    - http://config-3344.com:3344/master/config-dev.yml
+    - http://config-3344.com:3344/master/config-test.yml
+    - http://config-3344.com:3344/master/config-prod.yml
+  - dev分支
+    - http://config-3344.com:3344/dev/config-dev.yml
+    - http://config-3344.com:3344/dev/config-test.yml
+    - http://config-3344.com:3344/dev/config-prod.yml
+
+- /{application}-{profile}.yml
+  - http://config-3344.com:3344/config-dev.yml
+  - http://config-3344.com:3344/config-test.yml
+  - http://config-3344.com:3344/config-prod.yml
+  - http://config-3344.com:3344/config-xxxx.yml(不存在的配置)
+
+- /{application}/{profile}[/{label}]
+  - http://config-3344.com:3344/config/dev/master
+  - http://config-3344.com:3344/config/test/master
+  - http://config-3344.com:3344/config/test/dev
+
+**重要配置细节总结**
+
+- /{name}-{profiles}.yml
+- /{label}-{name}-{profiles}.yml
+- label：分支(branch)
+- name：服务名
+- profiles：环境(dev/test/prod)
+
+成功实现了用SpringCloud Config通过GitHub获取配置信息
