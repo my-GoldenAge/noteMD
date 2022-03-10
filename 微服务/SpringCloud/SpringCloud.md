@@ -5263,3 +5263,5 @@ http://localhost:3355/configInfo
 - 可否广播，一次通知，处处生效?
 - 我们想大范围的自动刷新，求方法
 
+# 13、SpringCloud Bus 消息总线
+
