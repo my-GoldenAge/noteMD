@@ -121,7 +121,14 @@
 ## Nacos安装
 
 - 本地Java8+Maven环境已经OK先
+
 - 从上面的GitHub官网下载Nacos压缩包
+
 - 解压安装包，直接运行bin目录下的startup.cmd
+
 - 命令运行成功后直接访问http://localhost:8848/nacos，默认账号密码都是nacos
+
 - 结果页面
+
+  <img src="img(SpringCloud Alibaba)/image-20220313214533430.png" alt="image-20220313214533430" style="zoom:80%;" />
+
