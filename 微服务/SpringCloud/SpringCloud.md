@@ -6038,3 +6038,263 @@ public class ReceiveMessageListenerController {
 - 启动StreamMQMain8802
 - 8801发送8802接收消息
 
+## Stream消息重复消费问题
+
+依照8802，克隆出来一份运行8803 - cloud-stream-rabbitmq-consumer8803。
+
+**启动**
+
+- RabbitMQ
+- 服务注册 - 8801
+- 消息生产 - 8801
+- 消息消费 - 8802
+- 消息消费 - 8802
+
+**运行后有两个问题**
+
+1. 有重复消费问题
+2. 消息持久化问题，就是当该消费者停止运行的时间里生产者发送了信息，当消费者再次运行时是收不到这些信息的，导致信息丢失（**大忌**）
+
+**消费**
+
+- http://localhost:8801/sendMessage
+- 目前是8802/8803同时都收到了，存在重复消费问题
+- 如何解决：分组和持久化属性group（重要）
+
+**生产实际案例**
+
+比如在如下场景中，订单系统我们做集群部署，都会从RabbitMQ中获取订单信息，那如果一个订单同时被两个服务获取到，那么就会造成数据错误，我们得避免这种情况。这时我们就可以**使用Stream中的消息分组来解决**。
+
+ <img src="img(SpringCloud)/f61e83441af907a42e8886368bde59ff.png" alt="img" style="zoom:80%;" />
+
+注意在Stream中处于同一个group中的多个消费者是竞争关系，就能够保证消息只会被其中一个应用消费一次。不同组是可以全面消费的(重复消费)。
+
+## Stream之group解决消息重复消费
+
+**原理**
+
+微服务应用放置于同一个group中，就能够保证消息只会被其中一个应用消费一次。不同的组是可以重复消费的，**同一个组内会发生竞争关系，只有其中一个可以消费。**
+
+<img src="img(SpringCloud)/image-20220313144133775.png" alt="image-20220313144133775" style="zoom:80%;" />
+
+如果我们一开始没有配置，rabbitmq会默认把他们分成不同的组并分别赋予不同的名字（随机字符串）
+
+**现在赋予8802和8803各自的名称：8802是GroupA，8803是GroupB**
+
+```yaml
+...
+
+spring:
+  application:
+    name: cloud-stream-consumer
+  cloud:
+    stream:
+      binders: # 在此处配置要绑定的rabbitmq的服务信息；
+        defaultRabbit: # 表示定义的名称，用于于binding整合
+          type: rabbit # 消息组件类型
+          environment: # 设置rabbitmq的相关的环境配置
+            spring:
+              rabbitmq:
+                host: localhost
+                port: 5672
+                username: guest
+                password: guest
+      bindings: # 服务的整合处理
+        input: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要使用的Exchange名称定义
+          content-type: application/json # 设置消息类型，本次为对象json，如果是文本则设置“text/plain”
+          binder: defaultRabbit # 设置要绑定的消息服务的具体设置
+          group: GroupA #<---进行分组解决重复消费和持久化
+
+...
+```
+
+```yaml
+...
+
+spring:
+  application:
+    name: cloud-stream-consumer
+  cloud:
+    stream:
+      binders: # 在此处配置要绑定的rabbitmq的服务信息；
+        defaultRabbit: # 表示定义的名称，用于于binding整合
+          type: rabbit # 消息组件类型
+          environment: # 设置rabbitmq的相关的环境配置
+            spring:
+              rabbitmq:
+                host: localhost
+                port: 5672
+                username: guest
+                password: guest
+      bindings: # 服务的整合处理
+        input: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要使用的Exchange名称定义
+          content-type: application/json # 设置消息类型，本次为对象json，如果是文本则设置“text/plain”
+          binder: defaultRabbit # 设置要绑定的消息服务的具体设置
+          group: GroupB #<---进行分组解决重复消费和持久化
+
+...
+```
+
+<img src="img(SpringCloud)/image-20220313144931163.png" alt="image-20220313144931163" style="zoom:80%;" />
+
+但目前重复消费的问题还没有解决，只要分到同一组就行，将8803的group也分为GroupA即可
+
+ <img src="img(SpringCloud)/image-20220313145642864.png" alt="image-20220313145642864" style="zoom:80%;" />
+
+<img src="img(SpringCloud)/image-20220313145738964.png" alt="image-20220313145738964" style="zoom:80%;" />
+
+<img src="img(SpringCloud)/image-20220313145758650.png" alt="image-20220313145758650" style="zoom:80%;" />
+
+可以看到各自消费了三条，没有重复消费
+
+## Stream之消息持久化
+
+通过上述，解决了重复消费问题，再看看持久化。
+
+停止8802/8803并**去除掉**8802的分组`group: A_Group`，8803的分组`group: A_Group`没有去掉。
+
+8801先发送4条消息到RabbitMq。
+
+先启动8802，**无分组属性配置**，后台没有打出来消息。
+
+再启动8803，**有分组属性配置**，后台打出来了MQ上的消息。(消息持久化体现)
+
+# 16、SpringCloud Sleuth分布式请求链路追踪
+
+## Sleuth是什么
+
+**为什么会出现这个技术？要解决哪些问题？**
+
+在微服务框架中，一个由客户端发起的请求在后端系统中会经过多个不同的的服务节点调用来协同产生最后的请求结果，每一个前段请求都会形成一条复杂的分布式服务调用链路，链路中的任何一环出现高延时或错误都会引起整个请求最后的失败。
+
+- [git官网](https://github.com/spring-cloud/spring-cloud-sleuth)
+- Spring Cloud Sleuth提供了一套完整的服务跟踪的解决方案
+- 在分布式系统中提供追踪解决方案并且兼容支持了zipkin（一个图形化的网页界面）
+
+## Sleuth之zipkin搭建安装
+
+**下载**
+
+SpringCloud从F版起已不需要自己构建Zipkin Server了，只需调用jar包即可
+
+https://dl.bintray.com/openzipkin/maven/io/zipkin/java/zipkin-server/
+
+**运行jar**
+
+```shell
+java -jar zipkin-server-2.12.9-exec.jar
+```
+
+http://localhost:9411/zipkin/
+
+**相关术语**
+
+完整的调用链路，表示一请求链路，一条链路通过Trace ld唯一标识，Span标识发起的请求信息，各span通过parent id关联起来
+
+—条链路通过Trace ld唯一标识，Span标识发起的请求信息，各span通过parent id关联起来。
+
+ <img src="img(SpringCloud)/f75fcfd2146df03428b9c8c53d13c1f1.png" alt="img" style="zoom:80%;" />
+
+名词解释
+
+- Trace：类似于树结构的Span集合，表示一条调用链路，存在唯一标识
+- span：表示调用链路来源，通俗的理解span就是一次请求信息
+
+## Sleuth链路监控展现
+
+服务提供者 cloud-provider-payment8001
+
+pom
+
+```xml
+<!--包含了sleuth+zipkin-->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-zipkin</artifactId>
+</dependency>
+```
+
+yaml
+
+```yaml
+...
+
+spring:
+  application:
+    name: cloud-payment-service
+
+  zipkin: #<-------------------------------------关键 
+      base-url: http://localhost:9411
+  sleuth: #<-------------------------------------关键
+    sampler:
+    #采样率值介于 0 到 1 之间，1 则表示全部采集
+    probability: 1
+    
+...    
+```
+
+业务类PaymentController
+
+```java
+@RestController
+@Slf4j
+public class PaymentController {
+    
+    ...
+    
+ 	@GetMapping("/payment/zipkin")
+    public String paymentZipkin() {
+        return "hi ,i'am paymentzipkin server fall back，welcome to here, O(∩_∩)O哈哈~";
+    }    
+}
+```
+
+服务消费者(调用方) cloue-consumer-order80
+
+pom
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-zipkin</artifactId>
+</dependency>
+```
+
+yaml
+
+```yaml
+...
+
+spring:
+    application:
+        name: cloud-order-service
+    zipkin:
+      base-url: http://localhost:9411
+    sleuth:
+      sampler:
+        probability: 1
+
+...
+```
+
+业务类OrderController
+
+```java
+    // ====================> zipkin+sleuth
+    @GetMapping("/consumer/payment/zipkin")
+    public String paymentZipkin()
+    {
+        String result = restTemplate.getForObject("http://localhost:8001"+"/payment/zipkin/", String.class);
+        return result;
+    }
+}
+```
+
+依次启动eureka7001/8001/80 - 80调用8001几次测试下
+
+打开浏览器访问: http://localhost:9411
+
+<img src="img(SpringCloud)/733ad2e18037059045ec80cb59d8d2a3.png" alt="img" style="zoom:80%;" />
+
