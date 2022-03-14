@@ -374,7 +374,7 @@ b 是加粗标签
          <input type="radio" name="sex" checked="checked" />女<br/>
     兴趣爱好：<input type="checkbox" checked="checked" />Java
              <input type="checkbox" />JavaScript
-             <inputtype="checkbox" />C++<br/>
+             <input type="checkbox" />C++<br/>
     国籍：<select>
            <option>--请选择国籍--</option>
            <option selected="selected">中国</option>
