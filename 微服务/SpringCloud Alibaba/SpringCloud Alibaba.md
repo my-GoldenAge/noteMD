@@ -678,3 +678,185 @@ Nacos中的dataid的组成格式及与SpringBoot配置文件中的匹配规则
   - 比方说为了容灾，将Service微服务分别部署在了杭州机房和广州机房，这时就可以给杭州机房的Service微服务起一个集群名称(HZ) ，给广州机房的Service微服务起一个集群名称(GZ)，还可以尽量让同一个机房的微服务互相调用，以提升性能。
 - 最后是Instance，就是微服务的实例。
 
+## Nacos DataID配置
+
+指定spring.profile.active和配置文件的DatalD来使不同环境下读取不同的配置
+
+默认空间+默认分组+新建dev和test两个DatalD
+
+通过spring.profile.active属性就能进行多环境下配置文件的读取
+
+## Nacos Group分组方案
+
+通过Group实现环境区分 - 新建Group
+
+ <img src="img(SpringCloud Alibaba)/image-20220315132341809.png" alt="image-20220315132341809" style="zoom:80%;" />
+
+<img src="img(SpringCloud Alibaba)/image-20220315132409800.png" alt="image-20220315132409800" style="zoom:80%;" />
+
+bootstrap+application
+
+在config下增加一条group的配置即可。可配置为DEV_GROUP或TEST_GROUP
+
+<img src="img(SpringCloud Alibaba)/image-20220315132609774.png" alt="image-20220315132609774" style="zoom:80%;" />
+
+> - 通过 `spring.cloud.nacos.config.extension-configs[n].data-id` 的配置方式来支持多个 Data Id 的配置。
+> - 通过 `spring.cloud.nacos.config.extension-configs[n].group` 的配置方式自定义 Data Id 所在的组，不明确配置的话，默认是 DEFAULT_GROUP。
+> - 通过 `spring.cloud.nacos.config.extension-configs[n].refresh` 的配置方式来控制该 Data Id 在配置变更时，是否支持应用中可动态刷新， 感知到最新的配置值。默认是不支持的。
+>
+> | Note | 多个 Data Id 同时配置时，他的优先级关系是 `spring.cloud.nacos.config.extension-configs[n].data-id` 其中 n 的值越大，优先级越高。 |
+> | ---- | ------------------------------------------------------------ |
+>
+> | Note | `spring.cloud.nacos.config.extension-configs[n].data-id` 的值必须带文件扩展名，文件扩展名既可支持 properties，又可以支持 yaml/yml。 此时 `spring.cloud.nacos.config.file-extension` 的配置对自定义扩展配置的 Data Id 文件扩展名没有影响。 |
+> | ---- | ------------------------------------------------------------ |
+
+## Nacos Namespace命名空间方案
+
+> 用于进行租户粒度的配置隔离。不同的命名空间下，可以存在相同的 Group 或 Data ID 的配置。Namespace 的常用场景之一是不同环境的配置的区分隔离，例如开发测试环境和生产环境的资源（如配置、服务）隔离等。
+>
+> 在没有明确指定 `${spring.cloud.nacos.config.namespace}` 配置的情况下， 默认使用的是 Nacos 上 Public 这个namespae。如果需要使用自定义的命名空间，可以通过以下配置来实现：
+>
+> ```
+> spring.cloud.nacos.config.namespace=b3404bc0-d7dc-4855-b519-570ed34b62d7
+> ```
+>
+> | Note | 该配置必须放在 bootstrap.properties 文件中。此外 `spring.cloud.nacos.config.namespace` 的值是 namespace 对应的 id，id 值可以在 Nacos 的控制台获取。并且在添加配置时注意不要选择其他的 namespae，否则将会导致读取不到正确的配置。 |
+> | ---- | ------------------------------------------------------------ |
+
+<img src="img(SpringCloud Alibaba)/image-20220315134140329.png" alt="image-20220315134140329" style="zoom:80%;" />
+
+<img src="img(SpringCloud Alibaba)/image-20220315134230065.png" alt="image-20220315134230065" style="zoom:80%;" />
+
+<img src="img(SpringCloud Alibaba)/image-20220315134514221.png" alt="image-20220315134514221" style="zoom:80%;" />
+
+<img src="img(SpringCloud Alibaba)/image-20220315134653035.png" alt="image-20220315134653035" style="zoom:80%;" />
+
+## Nacos集群的架构说明
+
+> **集群部署架构图**
+>
+> 因此开源的时候推荐用户把所有服务列表放到一个vip下面，然后挂到一个域名下面
+>
+> [http://ip1](http://ip1/):port/openAPI 直连ip模式，机器挂则需要修改ip才可以使用。
+>
+> [http://SLB](http://slb/):port/openAPI 挂载SLB模式(内网SLB，不可暴露到公网，以免带来安全风险)，直连SLB即可，下面挂server真实ip，可读性不好。
+>
+> [http://nacos.com](http://nacos.com/):port/openAPI 域名 + SLB模式(内网SLB，不可暴露到公网，以免带来安全风险)，可读性好，而且换ip方便，推荐模式
+>
+>  <img src="img(SpringCloud Alibaba)/deployDnsVipMode.jpg" alt="deployDnsVipMode" style="zoom:80%;" />
+
+上面这张图翻译过来就是：
+
+ <img src="img(SpringCloud Alibaba)/681c3dc16a69f197896cbff482f2298e.png" alt="img" style="zoom:80%;" />
+
+**需要mysql数据库相关说明**
+
+> 默认Nacos使用嵌入式数据库实现数据的存储。所以，如果启动多个默认配置下的Nacos节点，数据存储是存在一致性问题的。为了解决这个问题，**Nacos采用了集中式存储的方式来支持集群化部署，目前只支持MySQL的存储**。
+>
+> **Nacos支持三种部署模式**
+>
+> - 单机模式-用于测试和单机试用。
+> - 集群模式-用于生产环境，确保高可用。
+> - 多集群模式-用于多数据中心场景。
+>
+> **单机模式支持mysql**
+>
+> 在0.7版本之前，在单机模式时nacos使用嵌入式数据库实现数据的存储，不方便观察数据存储的基本情况。0.7版本增加了支持mysql数据源能力，具体的操作步骤：
+>
+> 1. 安装数据库，版本要求:5.6.5+
+> 2. 初始化mysq数据库，数据库初始化文件: nacos-mysql.sql
+> 3. 修改conf/application.properties文件，增加支持mysql数据源配置（目前只支持mysql)，添加mysql数据源的url、用户名和密码。
+>
+> ```plain
+> spring.datasource.platform=mysql
+> 
+> db.num=1
+> db.url.0=jdbc:mysql://11.162.196.16:3306/nacos_devtest?characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true
+> db.user=nacos_devtest
+> db.password=youdontknow
+> ```
+>
+> 再以单机模式启动nacos，nacos所有写嵌入式数据库的数据都写到了mysql。
+
+## Nacos持久化切换配置
+
+Nacos默认自带的是嵌入式数据库derby，[nacos的pom.xml](https://github.com/alibaba/nacos/blob/develop/config/pom.xml)中可以看出。
+
+ <img src="img(SpringCloud Alibaba)/image-20220315141630663.png" alt="image-20220315141630663" style="zoom:80%;" />
+
+derby到mysql切换配置步骤：
+
+1. nacos-server-1.1.4\nacos\conf录下找到nacos-mysql.sql文件，执行脚本。（就是在mysql数据库执行即可）
+2. nacos-server-1.1.4\nacos\conf目录下找到application.properties，添加以下配置（按需修改对应值）。
+
+```plain
+##############mysql集中存储###################
+spring.datasource.platform=mysql
+
+db.num=1
+db.url.0=jdbc:mysql://localhost:3306/nacos_config?characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&serverTimezone=GMT
+db.user=nacos_config
+db.password=123456
+```
+
+启动Nacos，可以看到是个全新的空记录界面，以前是记录进derby。
+
+## Linux上配置Nacos集群
+
+先去[下载Linux版本的Nacos](https://github.com/alibaba/nacos/releases)
+
+tar命令解压后安装
+
+**注意**：Linux上修改配置建议复制一份出来（复制出来的加个后缀.bk），不过有的有备份如：以.example结尾的
+
+**Linux服务器上mysql数据库配置**
+
+步骤和上面Windows的差不多，只不过执行mysql也在linux上面
+
+SQL脚本在哪里 - 目录nacos/conf/nacos-mysql.sql
+
+**application.properties配置**
+
+将application.properties.example复制为application.properties追加以下内容，设置数据源
+
+```plain
+##############mysql集中存储###################
+spring.datasource.platform=mysql
+
+db.num=1
+db.url.0=jdbc:mysql://localhost:3306/nacos_config?characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&serverTimezone=GMT
+db.user=nacos_config
+db.password=123456
+```
+
+**Linux服务器上nacos的集群配置cluster.conf**
+
+梳理出3台nacos集器的不同服务端口号，设置3个端口：
+
+- 3333
+- 4444
+- 5555
+
+复制cluster.conf.example为cluster.conf写上nacos集群的ip端口
+
+**注意**，这个IP不能写127.0.0.1，必须是Linux命令`hostname -i`能够识别的IP
+
+**编辑Nacos的启动脚本startup.sh，使它能够接受不同的启动端口**
+
+/mynacos/nacos/bin目录下有startup.sh
+
+平时单机版的启动，都是./startup.sh即可
+
+但是，集群启动，我们希望可以类似其它软件的shell命令，传递不同的端口号启动不同的nacos实例。
+命令: ./startup.sh -po 3333表示启动端口号为3333的nacos服务器实例，和上一步的cluster.conf配置的一致。
+
+因为这里的参数p被占用了，所以用的 po （大概是版本更新了）
+
+修改的内容：
+
+ <img src="img(SpringCloud Alibaba)/image-20220315185031620.png" alt="image-20220315185031620" style="zoom:80%;" />
+
+<img src="img(SpringCloud Alibaba)/image-20220315185128201.png" alt="image-20220315185128201" style="zoom:80%;" />
+
+执行方式 - `startup.sh - po 端口号`
+
