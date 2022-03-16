@@ -860,3 +860,90 @@ db.password=123456
 
 执行方式 - `startup.sh - po 端口号`
 
+**Nginx的配置，由它作为负载均衡器**
+
+修改nginx的配置文件 - nginx.conf（这里我先备份了：nginx.conf.example）
+
+ <img src="img(SpringCloud Alibaba)/image-20220316173827115.png" alt="image-20220316173827115" style="zoom:80%;" />
+
+```shell
+    upstream cluster{
+        server 192.168.200.128:3333;
+        server 192.168.200.128:4444;
+        server 192.168.200.128:5555;
+    }
+
+    server {
+        listen 1111;
+        server_name localhost;
+
+        location /{
+            proxy_pass http://cluster;
+        }
+    }
+
+```
+
+ <img src="img(SpringCloud Alibaba)/image-20220316174631501.png" alt="image-20220316174631501" style="zoom:80%;" />
+
+指定该配置启动
+
+**截止到此处，1个Nginx+3个nacos注册中心+1个mysql**
+
+- 启动3个nacos注册中心
+  - `startup.sh - p 3333`
+  - `startup.sh - p 4444`
+  - `startup.sh - p 5555`
+  - 查看nacos进程启动数`ps -ef | grep nacos | grep -v grep | wc -l`
+
+- 启动nginx
+  - `./nginx -c /usr/local/nginx/conf/nginx.conf`
+  - 查看nginx进程`ps - ef| grep nginx`
+
+- 测试通过nginx，访问nacos - http://192.168.111.144:1111/nacos/#/login
+- 新建一个配置测试
+
+ <img src="img(SpringCloud Alibaba)/a550718db79bd46ee21031e36cb3be00.png" alt="img" style="zoom:80%;" />
+
+- 新建后，可在linux服务器的mysql新插入一条记录
+
+  ```sql
+  select * from config;
+  ```
+
+  <img src="img(SpringCloud Alibaba)/acc1d20f83d539d0e7943a11859328f5.png" alt="img" style="zoom:80%;" />
+
+- 让微服务cloudalibaba-provider-payment9002启动注册进nacos集群 - 修改配置文件
+
+  ```yaml
+  server:
+    port: 9002
+  
+  spring:
+    application:
+      name: nacos-payment-provider
+    c1oud:
+      nacos:
+        discovery:
+          #配置Nacos地址
+          #server-addr: Localhost:8848
+          #换成nginx的1111端口，做集群
+          server-addr: 192.168.200.128:1111
+  
+  management:
+    endpoints:
+      web:
+        exposure:
+          inc1ude: '*'
+  ```
+
+- 启动微服务cloudalibaba-provider-payment9002
+
+- 访问nacos，查看注册结果
+
+  <img src="img(SpringCloud Alibaba)/b463fc3b4e9796fa7d98fb72a3c421b6.png" alt="img" style="zoom:80%;" />
+
+**高可用小总结**
+
+ <img src="img(SpringCloud Alibaba)/42ff7ef670012437b046f099192d7484.png" alt="img" style="zoom:80%;" />
+
