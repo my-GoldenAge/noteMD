@@ -947,3 +947,429 @@ db.password=123456
 
  <img src="img(SpringCloud Alibaba)/42ff7ef670012437b046f099192d7484.png" alt="img" style="zoom:80%;" />
 
+# Sentinel实现熔断与限流
+
+## Sentinel是什么
+
+[Sentinel官方文档](https://sentinelguard.io/zh-cn/docs/introduction.html)
+
+[SpringCloud官方文档](https://spring-cloud-alibaba-group.github.io/github-pages/greenwich/spring-cloud-alibaba.html#_spring_cloud_alibaba_sentinel)
+
+[Github官方中文文档](https://github.com/alibaba/Sentinel/wiki/%E4%BB%8B%E7%BB%8D)
+
+> 随着微服务的流行，服务和服务之间的稳定性变得越来越重要。Sentinel 以流量为切入点，从流量控制、熔断降级、系统负载保护等多个维度保护服务的稳定性。
+>
+> Sentinel 具有以下特征:
+>
+> - **丰富的应用场景**：Sentinel 承接了阿里巴巴近 10 年的双十一大促流量的核心场景，例如秒杀（即突发流量控制在系统容量可以承受的范围）、消息削峰填谷、集群流量控制、实时熔断下游不可用应用等。
+> - **完备的实时监控**：Sentinel 同时提供实时的监控功能。您可以在控制台中看到接入应用的单台机器秒级数据，甚至 500 台以下规模的集群的汇总运行情况。
+> - **广泛的开源生态**：Sentinel 提供开箱即用的与其它开源框架/库的整合模块，例如与 Spring Cloud、Apache Dubbo、gRPC、Quarkus 的整合。您只需要引入相应的依赖并进行简单的配置即可快速地接入 Sentinel。同时 Sentinel 提供 Java/Go/C++ 等多语言的原生实现。
+> - **完善的 SPI 扩展机制**：Sentinel 提供简单易用、完善的 SPI 扩展接口。您可以通过实现扩展接口来快速地定制逻辑。例如定制规则管理、适配动态数据源等。
+>
+> Sentinel 的主要特性：
+>
+> <img src="img(SpringCloud Alibaba)/50505538-2c484880-0aaf-11e9-9ffc-cbaaef20be2b.png" alt="Sentinel-features-overview" style="zoom:80%;" />
+>
+> Sentinel 的开源生态：
+>
+> <img src="img(SpringCloud Alibaba)/84338449-a9497e00-abce-11ea-8c6a-473fe477b9a1.png" alt="Sentinel-opensource-eco" style="zoom:80%;" />
+>
+> Sentinel 分为两个部分:
+>
+> - 核心库（Java 客户端）不依赖任何框架/库，能够运行于所有 Java 运行时环境，同时对 Dubbo / Spring Cloud 等框架也有较好的支持。
+> - 控制台（Dashboard）基于 Spring Boot 开发，打包后可以直接运行，不需要额外的 Tomcat 等应用容器。
+
+## Sentinel下载安装运行
+
+[GitHub下载](https://github.com/alibaba/Sentinel/releases)
+
+下载的是个jar包，直接 -jar 运行即可
+
+```shell
+java -jar sentinel-dashboard-1.7.0.jar
+```
+
+访问Sentinel管理界面
+
+- localhost:8080
+- 登录账号密码均为sentinel
+
+## Sentinel初始化监控
+
+**新建工程 - cloudalibaba-sentinel-service8401**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloudalibaba-sentinel-service8401</artifactId>
+
+    <dependencies>
+        <!--SpringCloud ailibaba nacos -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!--SpringCloud ailibaba sentinel-datasource-nacos 后续做持久化用到-->
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-datasource-nacos</artifactId>
+        </dependency>
+        <!--SpringCloud ailibaba sentinel -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+        </dependency>
+        <!-- SpringBoot整合Web组件+actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--commons-->
+        <dependency>
+            <groupId>com.eagle.springcloud</groupId>
+            <artifactId>cloud-api-commons</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <!--日常通用jar包配置-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+```yaml
+server:
+  port: 8401
+
+spring:
+  application:
+    name: cloudalibaba-sentinel-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+        port: 8719  #默认8719，假如被占用了会自动从8719开始依次+1扫描。直至找到未被占用的端口
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+```
+
+```java
+package com.eagle.springcloud;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+
+/**
+ * @ClassName: MainApp8401
+ * @author: Maybe
+ * @date: 2022/3/17  14:51
+ */
+@SpringBootApplication
+@EnableDiscoveryClient
+public class MainApp8401 {
+    public static void main(String[] args) {
+        SpringApplication.run(MainApp8401.class, args);
+    }
+}
+```
+
+```java
+package com.eagle.springcloud.controller;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * @ClassName: FlowLimitController
+ * @author: Maybe
+ * @date: 2022/3/17  14:52
+ */
+@RestController
+@Slf4j
+public class FlowLimitController {
+    @GetMapping("/testA")
+    public String testA() {
+        return "------testA";
+    }
+
+    @GetMapping("/testB")
+    public String testB() {
+        log.info(Thread.currentThread().getName() + "\t" + "...testB");
+        return "------testB";
+    }
+}
+```
+
+启动微服务8401
+
+启动nacos8848
+
+启动sentinel8080
+
+**查看sentienl控制台**
+
+刚启动，空空如也，啥都没有
+
+因为Sentinel采用的懒加载
+
+- 只要执行一次访问即可
+  - http://localhost:8401/testA
+  - http://localhost:8401/testB
+
+![image-20220317155703565](img(SpringCloud Alibaba)/image-20220317155703565.png)
+
+## Sentinel流控规则简介
+
+<img src="img(SpringCloud Alibaba)/image-20220317160414507.png" alt="image-20220317160414507" style="zoom:80%;" />
+
+进一步解释说明：
+
+- 资源名：唯一名称，默认请求路径。
+- 针对来源：Sentinel可以针对调用者进行限流，填写微服务名，默认default（不区分来源）。
+
+- 阈值类型/单机阈值：
+  - QPS(每秒钟的请求数量)︰当调用该API的QPS达到阈值的时候，进行限流。
+  - 线程数：当调用该API的线程数达到阈值的时候，进行限流。（**就类似TPS**）
+
+- 是否集群：不需要集群。
+- 流控模式：
+  - 直接：API达到限流条件时，直接限流。
+  - 关联：当关联的资源达到阈值时，就限流自己。
+  - 链路：只记录指定链路上的流量（指定资源从入口资源进来的流量，如果达到阈值，就进行限流)【API级别的针对来源】。
+
+- 流控效果：
+  - 快速失败：直接失败，抛异常。
+  - Warm up：根据Code Factor（冷加载因子，默认3）的值，从阈值/codeFactor，经过预热时长，才达到设置的QPS阈值。
+  - 排队等待：匀速排队，让请求以匀速的速度通过，阈值类型必须设置为QPS，否则无效。
+
+## Sentinel流控-直接失败（系统默认）
+
+有关QPS和TPS的区别，可参考 [博客](https://blog.csdn.net/qq_29347295/article/details/85116229)
+
+### QPS
+
+**配置及说明**
+
+这里阈值类型选的是QPS类型
+
+表示1秒钟内查询1次就是OK，若超过次数1，就直接->快速失败，报默认错误
+
+ <img src="img(SpringCloud Alibaba)/image-20220317161152542.png" alt="image-20220317161152542" style="zoom:80%;" />
+
+**测试**
+
+快速多次点击访问http://localhost:8401/testA
+
+**结果**
+
+返回页面 Blocked by Sentinel (flow limiting)
+
+**思考**
+
+直接调用默认报错信息，技术方面OK，但是，是否应该有我们自己的后续处理？类似有个fallback的兜底方法?
+
+### TPS（线程数）
+
+其实所谓线程数就是你一个请求过来我来一个线程给你办事，然后给你响应（这整个过程术语就叫一个事务），如果在这一个线程办事的时候又有一个请求过来就需要再来一个线程处理。而TPS就是指一秒钟内处理事务的件数。
+
+改为线程数
+
+ <img src="img(SpringCloud Alibaba)/image-20220317161631530.png" alt="image-20220317161631530" style="zoom:80%;" />
+
+当调用该API的线程数达到阈值的时候，进行限流。
+
+## Sentinel流控-关联
+
+**是什么？**
+
+- 当自己关联的资源达到阈值时，就限流自己
+- 当与A关联的资源B达到阀值后，就限流A自己（B惹事，A挂了）
+
+这个设定乍一看好像很奇怪呀，为什么别人达到阈值了要限流我呀？其实设定是没问题的，可以应用的场景比如我支付模块到阈值了，蚌埠住了，我触发这个关联，限流我上面下订单的模块，从而解决燃眉之急
+
+**设置testA**
+
+当关联资源/testB的QPS阀值超过1时，就限流/testA的Rest访问地址，**当关联资源到阈值后限制配置好的资源名**。
+
+ <img src="img(SpringCloud Alibaba)/image-20220317163127529.png" alt="image-20220317163127529" style="zoom:80%;" />
+
+**Postman模拟并发密集访问testB**
+
+<img src="img(SpringCloud Alibaba)/image-20220317163914058.png" alt="image-20220317163914058" style="zoom:80%;" />
+
+Run - 大批量线程高并发访问B，postman的操作相关 [博客](https://blog.csdn.net/zbj18314469395/article/details/106693615?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522164748530116782184627158%2522%252C%2522scm%2522%253A%252220140713.130102334..%2522%257D&request_id=164748530116782184627158&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~top_positive~default-1-106693615.142^v2^pc_search_quality_down,143^v4^register&utm_term=postman&spm=1018.2226.3001.4187)
+
+运行后随机访问/testA，发现：
+
+ <img src="img(SpringCloud Alibaba)/image-20220317164021371.png" alt="image-20220317164021371" style="zoom:80%;" />
+
+这就是流量监控里面的关联策略
+
+## Sentinel流控-预热
+
+> **Warm Up**
+>
+> Warm Up（`RuleConstant.CONTROL_BEHAVIOR_WARM_UP`）方式，即预热/冷启动方式。当系统长期处于低水位的情况下，当流量突然增加时，直接把系统拉升到高水位可能瞬间把系统压垮。通过"冷启动"，让通过的流量缓慢增加，在一定时间内逐渐增加到阈值上限，给冷系统一个预热的时间，避免冷系统被压垮。详细文档可以参考 [流量控制 - Warm Up 文档](https://github.com/alibaba/Sentinel/wiki/限流---冷启动)，具体的例子可以参见 [WarmUpFlowDemo](https://github.com/alibaba/Sentinel/blob/master/sentinel-demo/sentinel-demo-basic/src/main/java/com/alibaba/csp/sentinel/demo/flow/WarmUpFlowDemo.java)。
+>
+> 通常冷启动的过程系统允许通过的 QPS 曲线如下图所示：
+>
+>  <img src="img(SpringCloud Alibaba)/68292392-b5b0aa00-00c6-11ea-86e1-ecacff8aab51.png" alt="image" style="zoom:80%;" />
+
+**默认coldFactor为3**，即请求QPS 从 threshold / 3开始，经预热时长逐渐升至设定的QPS阈值。
+
+**WarmUp配置**
+
+案例，阀值为10+预热时长设置5秒。
+
+系统初始化的阀值为10/ 3约等于3，即阀值刚开始为3，然后过了5秒后阀值才慢慢升高恢复到10
+
+ <img src="img(SpringCloud Alibaba)/image-20220317194835316.png" alt="image-20220317194835316" style="zoom:80%;" />
+
+**测试**
+
+多次快速点击http://localhost:8401/testA - 刚开始不行，后续慢慢OK
+
+**应用场景**
+
+如：秒杀系统在开启的瞬间，会有很多流量上来，很有可能把系统打死，预热方式就是把为了保护系统，可慢慢的把流量放进来,慢慢的把阀值增长到设置的阀值。
+
+## Sentinel流控-排队等待
+
+> **匀速排队**
+>
+> 匀速排队（`RuleConstant.CONTROL_BEHAVIOR_RATE_LIMITER`）方式会严格控制请求通过的间隔时间，也即是让请求以均匀的速度通过，对应的是漏桶算法。详细文档可以参考 [流量控制 - 匀速器模式](https://github.com/alibaba/Sentinel/wiki/流量控制-匀速排队模式)，具体的例子可以参见 [PaceFlowDemo](https://github.com/alibaba/Sentinel/blob/master/sentinel-demo/sentinel-demo-basic/src/main/java/com/alibaba/csp/sentinel/demo/flow/PaceFlowDemo.java)。
+>
+> 该方式的作用如下图所示：
+>
+>  <img src="img(SpringCloud Alibaba)/68292442-d4af3c00-00c6-11ea-8251-d0977366d9b4.png" alt="image" style="zoom:80%;" />
+>
+> 这种方式主要用于处理间隔性突发的流量，例如消息队列。想象一下这样的场景，在某一秒有大量的请求到来，而接下来的几秒则处于空闲状态，我们希望系统能够在接下来的空闲期间逐渐处理这些请求，而不是在第一秒直接拒绝多余的请求。
+>
+> **注意**：匀速排队模式暂时不支持 QPS > 1000 的场景。
+
+匀速排队，让请求以均匀的速度通过，阀值类型必须设成QPS，否则无效。
+
+**例如**：/testA每秒处理一个请求，超过的话就排队等待，等待的超时时间为10000毫秒。
+
+ <img src="img(SpringCloud Alibaba)/image-20220317200848101.png" alt="image-20220317200848101" style="zoom:80%;" />
+
+**测试**
+
+添加日志记录代码到FlowLimitController的testA方法
+
+```java
+@RestController
+@Slf4j
+public class FlowLimitController {
+    @GetMapping("/testA")
+    public String testA() {
+        log.info(Thread.currentThread().getName()+"\t"+"...testA");
+        return "------testA";
+    }
+
+    @GetMapping("/testB")
+    public String testB() {
+        log.info(Thread.currentThread().getName() + "\t" + "...testB");
+        return "------testB";
+    }
+}
+```
+
+Postman模拟并发密集访问testA
+
+<img src="img(SpringCloud Alibaba)/image-20220317201728084.png" alt="image-20220317201728084" style="zoom:80%;" />
+
+后台结果
+
+<img src="img(SpringCloud Alibaba)/image-20220317201853172.png" alt="image-20220317201853172" style="zoom:80%;" />
+
+可以看到，尽管请求是一秒五个，后台处理还是一秒一个的处理了二十次，并让还未来得及处理的请求先去排队，只要还没有超出等待时间就先排队
+
+## Sentinel服务降级
+
+> **概述**
+>
+> 除了流量控制以外，对调用链路中不稳定的资源进行熔断降级也是保障高可用的重要措施之一。一个服务常常会调用别的模块，可能是另外的一个远程服务、数据库，或者第三方 API 等。例如，支付的时候，可能需要远程调用银联提供的 API；查询某个商品的价格，可能需要进行数据库查询。然而，这个被依赖服务的稳定性是不能保证的。如果依赖的服务出现了不稳定的情况，请求的响应时间变长，那么调用服务的方法的响应时间也会变长，线程会产生堆积，最终可能耗尽业务自身的线程池，服务本身也变得不可用。
+>
+> <img src="img(SpringCloud Alibaba)/62410811-cd871680-b61d-11e9-9df7-3ee41c618644.png" alt="chain" style="zoom:80%;" />
+>
+> 现代微服务架构都是分布式的，由非常多的服务组成。不同服务之间相互调用，组成复杂的调用链路。以上的问题在链路调用中会产生放大的效果。复杂链路上的某一环不稳定，就可能会层层级联，最终导致整个链路都不可用。因此我们需要对不稳定的**弱依赖服务调用**进行熔断降级，暂时切断不稳定调用，避免局部不稳定因素导致整体的雪崩。熔断降级作为保护自身的手段，通常在客户端（调用端）进行配置。
+
+## Sentinel服务降级-RT
+
+> 慢调用比例 (`SLOW_REQUEST_RATIO`)：选择以慢调用比例作为阈值，需要设置允许的慢调用 RT（即最大的响应时间），请求的响应时间大于该值则统计为慢调用。当单位统计时长（`statIntervalMs`）内请求数目大于设置的最小请求数目，并且慢调用的比例大于阈值，则接下来的熔断时长内请求会自动被熔断。经过熔断时长后熔断器会进入探测恢复状态（HALF-OPEN 状态），若接下来的一个请求响应时间小于设置的慢调用 RT 则结束熔断，若大于设置的慢调用 RT 则会再次被熔断。
+
+添加一个/testD
+
+```java
+@RestController
+@Slf4j
+public class FlowLimitController {
+
+    ...
+
+    @GetMapping("/testD")
+    public String testD() {
+        try {
+            TimeUnit.SECONDS.sleep(1);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        log.info("testD 测试RT");
+        return "------testD";
+    }
+
+}
+```
+
+ <img src="img(SpringCloud Alibaba)/image-20220317210029486.png" alt="image-20220317210029486" style="zoom:80%;" />
+
+表示处理响应的时长超过200毫秒就是慢调用，当慢调用的比例大于阈值时，则接下来的一秒内该请求会自动被熔断，经过熔断时长后熔断器会进入探测恢复状态，若接下来的一个请求响应时间小于设置的慢调用 RT 则结束熔断，若大于设置的慢调用 RT 则会再次被熔断。
+
+因为我们加了线程睡一秒钟，所以很明显所有的 /testD 连接都属于慢调用
+
+jmeter压测
+
+ <img src="img(SpringCloud Alibaba)/6dcaee9f62bfd3c8334560df34f6aaa6.png" alt="img" style="zoom:80%;" />
+
+结论
+
+按照上述配置，永远一秒钟打进来10个线程（大于5个了）调用testD，我们希望200毫秒处理完本次任务，如果超过200毫秒还没处理完，在未来1秒钟的时间窗口内，断路器打开（保险丝跳闸）微服务不可用，保险丝跳闸断电了后续我停止jmeter，没有这么大的访问量了，断路器关闭（保险丝恢复），微服务恢复OK。
+
