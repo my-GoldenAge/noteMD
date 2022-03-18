@@ -1322,7 +1322,7 @@ Postman模拟并发密集访问testA
 
 可以看到，尽管请求是一秒五个，后台处理还是一秒一个的处理了二十次，并让还未来得及处理的请求先去排队，只要还没有超出等待时间就先排队
 
-## Sentinel服务降级
+## Sentinel服务熔断降级
 
 > **概述**
 >
@@ -1332,7 +1332,7 @@ Postman模拟并发密集访问testA
 >
 > 现代微服务架构都是分布式的，由非常多的服务组成。不同服务之间相互调用，组成复杂的调用链路。以上的问题在链路调用中会产生放大的效果。复杂链路上的某一环不稳定，就可能会层层级联，最终导致整个链路都不可用。因此我们需要对不稳定的**弱依赖服务调用**进行熔断降级，暂时切断不稳定调用，避免局部不稳定因素导致整体的雪崩。熔断降级作为保护自身的手段，通常在客户端（调用端）进行配置。
 
-## Sentinel服务降级-RT
+## Sentinel服务熔断降级-RT
 
 > 慢调用比例 (`SLOW_REQUEST_RATIO`)：选择以慢调用比例作为阈值，需要设置允许的慢调用 RT（即最大的响应时间），请求的响应时间大于该值则统计为慢调用。当单位统计时长（`statIntervalMs`）内请求数目大于设置的最小请求数目，并且慢调用的比例大于阈值，则接下来的熔断时长内请求会自动被熔断。经过熔断时长后熔断器会进入探测恢复状态（HALF-OPEN 状态），若接下来的一个请求响应时间小于设置的慢调用 RT 则结束熔断，若大于设置的慢调用 RT 则会再次被熔断。
 
@@ -1372,4 +1372,272 @@ jmeter压测
 结论
 
 按照上述配置，永远一秒钟打进来10个线程（大于5个了）调用testD，我们希望200毫秒处理完本次任务，如果超过200毫秒还没处理完，在未来1秒钟的时间窗口内，断路器打开（保险丝跳闸）微服务不可用，保险丝跳闸断电了后续我停止jmeter，没有这么大的访问量了，断路器关闭（保险丝恢复），微服务恢复OK。
+
+## Sentinel服务熔断降级-异常比例
+
+> 异常比例 (`ERROR_RATIO`)：当单位统计时长（`statIntervalMs`）内请求数目大于设置的最小请求数目，并且异常的比例大于阈值，则接下来的熔断时长内请求会自动被熔断。经过熔断时长后熔断器会进入探测恢复状态（HALF-OPEN 状态），若接下来的一个请求成功完成（没有错误）则结束熔断，否则会再次被熔断。异常比率的阈值范围是 `[0.0, 1.0]`，代表 0% - 100%。
+
+```java
+@RestController
+@Slf4j
+public class FlowLimitController {
+
+    ...
+
+    @GetMapping("/testE")
+    public String testE() {
+        log.info("testE 异常比例");
+        int age = 10 / 0;
+        return "------testE";
+    }
+
+}
+```
+
+ <img src="img(SpringCloud Alibaba)/image-20220318145910628.png" alt="image-20220318145910628" style="zoom:80%;" />
+
+jmeter
+
+ <img src="img(SpringCloud Alibaba)/6b4fd3cb04118ae77181fe8bf2019176.png" alt="img" style="zoom:80%;" />
+
+按照上述配置，单独访问一次，必然来一次报错一次(int age = 10/0)，调一次错一次。
+
+开启jmeter后，直接高并发发送请求，多次调用达到我们的配置条件了。断路器开启(保险丝跳闸)，微服务不可用了，不再报错error而是服务降级了。
+
+## Sentinel服务熔断降级-异常数
+
+> 异常数 (`ERROR_COUNT`)：当单位统计时长内的异常数目超过阈值之后会自动进行熔断。经过熔断时长后熔断器会进入探测恢复状态（HALF-OPEN 状态），若接下来的一个请求成功完成（没有错误）则结束熔断，否则会再次被熔断。
+
+依然使用上面的 /testE 进行测试
+
+ <img src="img(SpringCloud Alibaba)/image-20220318150710876.png" alt="image-20220318150710876" style="zoom:80%;" />
+
+访问http://localhost:8401/testE，第一次访问绝对报错，因为除数不能为零，我们看到error窗口，但是达到3次报错后，进入熔断后降级。
+
+## Sentinel服务熔断降级总结
+
+> 注意异常降级**仅针对业务异常**，对 Sentinel 限流降级本身的异常（`BlockException`）不生效。
+
+- RT 是在一定的时间内响应时间过长（慢调用）达到阈值而对服务进行降级
+- 异常比例 是单位时间内发生异常的比例达到阈值而对服务进行降级
+- 异常数 是单位时间内发生异常的个数达到阈值而对服务进行降级
+
+## Sentinel热点key
+
+> 何为热点？热点即经常访问的数据。很多时候我们希望统计某个热点数据中访问频次最高的 Top K 数据，并对其访问进行限制。比如：
+>
+> - 商品 ID 为参数，统计一段时间内最常购买的商品 ID 并进行限制
+> - 用户 ID 为参数，针对一段时间内频繁访问的用户 ID 进行限制
+>
+> 热点参数限流会统计传入参数中的热点参数，并根据配置的限流阈值与模式，对包含热点参数的资源调用进行限流。热点参数限流可以看做是一种特殊的流量控制，仅对包含热点参数的资源调用生效。
+>
+>  <img src="img(SpringCloud Alibaba)/sentinel-hot-param-overview-1.png" alt="Sentinel Parameter Flow Control" style="zoom:80%;" />
+>
+> Sentinel 利用 LRU 策略统计最近最常访问的热点参数，结合令牌桶算法来进行参数级别的流控。热点参数限流支持集群模式。
+
+- 所谓热点就是精确到某个方法的某个参数，如果访问该方法时带有某个参数并且QPS（热点只能是QPS限流）到达阈值就进行限流降级，并且还可以有独有的该方法的fallback来兜底。
+- 热点还可以对该参数的特定值进行另外配置，例如：我访问了该方法，带了热点里的参数并且我刚好该参数的值就是热点里对该参数额外配置的值，那么就会按照该参数配置的值的QPS阈值算
+
+```java
+@RestController
+@Slf4j
+public class FlowLimitController
+{
+
+    ...
+
+    @GetMapping("/testHotKey")
+    //@SentinelResource的value就是个唯一的标识，sentinel的界面就是按照这个标识进行热点配置
+    @SentinelResource(value = "testHotKey", blockHandler/*兜底方法*/ = "deal_testHotKey")
+    public String testHotKey(@RequestParam(value = "p1", required = false) String p1,
+                             @RequestParam(value = "p2", required = false) String p2) {
+        //int age = 10/0;
+        return "------testHotKey";
+    }
+
+    /*兜底方法*/
+    public String deal_testHotKey(String p1, String p2, BlockException exception) {
+        return "------deal_testHotKey,o(╥﹏╥)o";  //sentinel系统默认的提示：Blocked by Sentinel (flow limiting)
+    }
+
+}
+```
+
+ <img src="img(SpringCloud Alibaba)/image-20220318154728369.png" alt="image-20220318154728369" style="zoom:80%;" />
+
+测试：
+
+- 方法testHotKey里面只要带上第一个参数并且QPS超过每秒1次，马上降级处理（不带就没事）
+- 异常用了我们自己定义的兜底方法
+- 但只要第一个参数的值为3，那么你狂点也不会降级（因为阈值是10）
+
+
+
+**注意**：这里@SentinelResource里面blockHandler指定的降级方法仅仅针对发生BlockException异常（这个异常是 com.alibaba.csp.sentinel.slots.block 包下的）的fallback方法，而不是说我们这个方法本身出现了异常（运行时异常）的fallback方法
+
+**有关 BlockException 异常**：
+
+```java
+package com.alibaba.csp.sentinel.slots.block;
+
+/**
+ * Abstract exception indicating blocked by Sentinel due to flow control,
+ * circuit breaking or system protection triggered.
+ *
+ * @author youji.zj
+ */
+public abstract class BlockException extends Exception {
+    ...
+}
+```
+
+上面的文档翻译过来（很重要）：
+
+> **抽象异常指示由于触发流控制、断路或系统保护而被 Sentinel 阻塞。**
+
+## Sentinel系统规则
+
+> Sentinel 系统自适应限流从整体维度对应用入口流量进行控制，结合应用的 Load、CPU 使用率、总体平均 RT、入口 QPS 和并发线程数等几个维度的监控指标，通过自适应的流控策略，让系统的入口流量和系统的负载达到一个平衡，让系统尽可能跑在最大吞吐量的同时保证系统整体的稳定性。
+
+> **系统规则**
+>
+> 系统保护规则是从应用级别的入口流量进行控制，从单台机器的 load、CPU 使用率、平均 RT、入口 QPS 和并发线程数等几个维度监控应用指标，让系统尽可能跑在最大吞吐量的同时保证系统整体的稳定性。
+>
+> 系统保护规则是应用整体维度的，而不是资源维度的，并且**仅对入口流量生效**。入口流量指的是进入应用的流量（`EntryType.IN`），比如 Web 服务或 Dubbo 服务端接收的请求，都属于入口流量。
+>
+> 系统规则支持以下的模式：
+>
+> - **Load 自适应**（仅对 Linux/Unix-like 机器生效）：系统的 load1 作为启发指标，进行自适应系统保护。当系统 load1 超过设定的启发值，且系统当前的并发线程数超过估算的系统容量时才会触发系统保护（BBR 阶段）。系统容量由系统的 `maxQps * minRt` 估算得出。设定参考值一般是 `CPU cores * 2.5`。
+> - **CPU usage**（1.5.0+ 版本）：当系统 CPU 使用率超过阈值即触发系统保护（取值范围 0.0-1.0），比较灵敏。
+> - **平均 RT**：当单台机器上所有入口流量的平均 RT 达到阈值即触发系统保护，单位是毫秒。
+> - **并发线程数**：当单台机器上所有入口流量的并发线程数达到阈值即触发系统保护。
+> - **入口 QPS**：当单台机器上所有入口流量的 QPS 达到阈值即触发系统保护。
+
+## @SentinelResource配置
+
+> **@SentinelResource 注解**
+>
+> > 注意：注解方式埋点不支持 private 方法。
+>
+> `@SentinelResource` 用于定义资源，并提供可选的异常处理和 fallback 配置项。 `@SentinelResource` 注解包含以下属性：
+>
+> - `value`：资源名称，必需项（不能为空）
+> - `entryType`：entry 类型，可选项（默认为 `EntryType.OUT`）
+> - `blockHandler` / `blockHandlerClass`: `blockHandler` 对应处理 `BlockException` 的函数名称，可选项。blockHandler 函数访问范围需要是 `public`，返回类型需要与原方法相匹配，参数类型需要和原方法相匹配并且最后加一个额外的参数，类型为 `BlockException`。blockHandler 函数默认需要和原方法在同一个类中。若希望使用其他类的函数，则可以指定 `blockHandlerClass` 为对应的类的 `Class` 对象，注意对应的函数必需为 static 函数，否则无法解析。
+> - `fallback` / `fallbackClass`：fallback 函数名称，可选项，用于在抛出异常的时候提供 fallback 处理逻辑。fallback 函数可以针对所有类型的异常（除了 `exceptionsToIgnore` 里面排除掉的异常类型）进行处理。fallback 函数签名和位置要求：
+>   - 返回值类型必须与原函数返回值类型一致；
+>   - 方法参数列表需要和原函数一致，或者可以额外多一个 `Throwable` 类型的参数用于接收对应的异常。
+>   - fallback 函数默认需要和原方法在同一个类中。若希望使用其他类的函数，则可以指定 `fallbackClass` 为对应的类的 `Class` 对象，注意对应的函数必需为 static 函数，否则无法解析。
+> - `defaultFallback`（since 1.6.0）：默认的 fallback 函数名称，可选项，通常用于通用的 fallback 逻辑（即可以用于很多服务或方法）。默认 fallback 函数可以针对所有类型的异常（除了 `exceptionsToIgnore` 里面排除掉的异常类型）进行处理。若同时配置了 fallback 和 defaultFallback，则只有 fallback 会生效。defaultFallback 函数签名要求：
+>   - 返回值类型必须与原函数返回值类型一致；
+>   - 方法参数列表需要为空，或者可以额外多一个 `Throwable` 类型的参数用于接收对应的异常。
+>   - defaultFallback 函数默认需要和原方法在同一个类中。若希望使用其他类的函数，则可以指定 `fallbackClass` 为对应的类的 `Class` 对象，注意对应的函数必需为 static 函数，否则无法解析。
+> - `exceptionsToIgnore`（since 1.6.0）：用于指定哪些异常被排除掉，不会计入异常统计中，也不会进入 fallback 逻辑中，而是会原样抛出。
+>
+> 1.8.0 版本开始，`defaultFallback` 支持在类级别进行配置。
+>
+> > 注：1.6.0 之前的版本 fallback 函数只针对降级异常（`DegradeException`）进行处理，**不能针对业务异常进行处理**。
+>
+> 特别地，若 blockHandler 和 fallback 都进行了配置，则被限流降级而抛出 `BlockException` 时只会进入 `blockHandler` 处理逻辑。若未配置 `blockHandler`、`fallback` 和 `defaultFallback`，则被限流降级时会将 `BlockException` **直接抛出**（若方法本身未定义 throws BlockException 则会被 JVM 包装一层 `UndeclaredThrowableException`）。
+
+
+
+主要试一下 blockHandlerClass 和 fallbackClass 这两个在外定义成类的兜底方法：
+
+```java
+package com.eagle.springcloud.controller;
+
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.eagle.springCloud.entities.CommonResult;
+import com.eagle.springCloud.entities.Payment;
+import com.eagle.springcloud.myhandler.CustomerBlockHandler;
+import com.eagle.springcloud.myhandler.CustomerFallBack;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * @ClassName: RateLimitController
+ * @author: Maybe
+ * @date: 2022/3/18  17:03
+ */
+@RestController
+@Slf4j
+public class RateLimitController {
+    @GetMapping("/byValue1")
+    @SentinelResource(value = "byValue1",
+            blockHandlerClass = CustomerBlockHandler.class,
+            blockHandler = "handlerException1")
+    public CommonResult byValue1() {
+        return new CommonResult(200, "按资源名称限流测试OK", new Payment(2020L, "serial001"));
+    }
+
+    @GetMapping("/byValue2")
+    @SentinelResource(value = "byValue2",
+            fallbackClass = CustomerFallBack.class,
+            fallback = "fallBack1")
+    public CommonResult byValue2() {
+        int a = 1 / 0;
+        return new CommonResult(200, "按资源名称限流测试OK", new Payment(2020L, "serial002"));
+    }
+
+}
+```
+
+```java
+package com.eagle.springcloud.myhandler;
+
+import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.eagle.springCloud.entities.CommonResult;
+
+/**
+ * @ClassName: CustomerBlockHandler
+ * @author: Maybe
+ * @date: 2022/3/18  17:24
+ */
+public class CustomerBlockHandler {
+    private static CommonResult handlerException1(BlockException blockException) {
+        return new CommonResult(444, "按客戶自定义,global handlerException----1");
+    }
+
+    private static CommonResult handlerException2(BlockException blockException) {
+        return new CommonResult(444, "按客戶自定义,global handlerException----2");
+    }
+}
+```
+
+```java
+package com.eagle.springcloud.myhandler;
+
+import com.eagle.springCloud.entities.CommonResult;
+
+/**
+ * @ClassName: CustomerFallBack
+ * @author: Maybe
+ * @date: 2022/3/18  17:30
+ */
+public class CustomerFallBack {
+    public static CommonResult fallBack1(Throwable throwable) {
+        return new CommonResult(444, "按客戶自定义,global fallback----1");
+    }
+
+    public static CommonResult fallBack2(Throwable throwable) {
+        return new CommonResult(444, "按客戶自定义,global fallback----2");
+    }
+}
+```
+
+再用sentinel限制一下byValue1
+
+ <img src="img(SpringCloud Alibaba)/image-20220318175536087.png" alt="image-20220318175536087" style="zoom:80%;" />
+
+可以看到一直刷新 /byValue1 ，正确的页面和BlockException兜底的页面交替出现
+
+而一直刷新 /byValue2 ，就一直是fallback兜底的方法页面（因为里面除0了，直接报错）
+
+Sentinel主要有三个核心Api：
+
+1. SphU定义资源
+2. Tracer定义统计
+3. ContextUtil定义了上下文
 
