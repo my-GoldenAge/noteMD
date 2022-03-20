@@ -1549,11 +1549,11 @@ package com.eagle.springcloud.controller;
 
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.eagle.springCloud.entities.CommonResult;
-import com.eagle.springCloud.entities.Payment;
 import com.eagle.springcloud.myhandler.CustomerBlockHandler;
 import com.eagle.springcloud.myhandler.CustomerFallBack;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -1564,21 +1564,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @Slf4j
 public class RateLimitController {
-    @GetMapping("/byValue1")
-    @SentinelResource(value = "byValue1",
+    @GetMapping("/byValue/fallback/{id}")
+    @SentinelResource(value = "byValueFallback",
             blockHandlerClass = CustomerBlockHandler.class,
-            blockHandler = "handlerException1")
-    public CommonResult byValue1() {
-        return new CommonResult(200, "按资源名称限流测试OK", new Payment(2020L, "serial001"));
-    }
-
-    @GetMapping("/byValue2")
-    @SentinelResource(value = "byValue2",
+            blockHandler = "handlerException1",
             fallbackClass = CustomerFallBack.class,
             fallback = "fallBack1")
-    public CommonResult byValue2() {
-        int a = 1 / 0;
-        return new CommonResult(200, "按资源名称限流测试OK", new Payment(2020L, "serial002"));
+    public CommonResult byValueFallback(@PathVariable Long id) {
+        if (id == 4) {
+            throw new IllegalArgumentException("IllegalArgumentException,非法参数异常....");
+        } else if (id == 5) {
+            throw new NullPointerException("NullPointerException,该ID没有对应记录,空指针异常");
+        }
+        return new CommonResult(200, "ok");
     }
 
 }
@@ -1589,6 +1587,7 @@ package com.eagle.springcloud.myhandler;
 
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.eagle.springCloud.entities.CommonResult;
+import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * @ClassName: CustomerBlockHandler
@@ -1596,11 +1595,11 @@ import com.eagle.springCloud.entities.CommonResult;
  * @date: 2022/3/18  17:24
  */
 public class CustomerBlockHandler {
-    private static CommonResult handlerException1(BlockException blockException) {
+    private static CommonResult handlerException1(@PathVariable Long id, BlockException blockException) {
         return new CommonResult(444, "按客戶自定义,global handlerException----1");
     }
 
-    private static CommonResult handlerException2(BlockException blockException) {
+    private static CommonResult handlerException2(@PathVariable Long id, BlockException blockException) {
         return new CommonResult(444, "按客戶自定义,global handlerException----2");
     }
 }
@@ -1610,6 +1609,7 @@ public class CustomerBlockHandler {
 package com.eagle.springcloud.myhandler;
 
 import com.eagle.springCloud.entities.CommonResult;
+import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * @ClassName: CustomerFallBack
@@ -1617,27 +1617,304 @@ import com.eagle.springCloud.entities.CommonResult;
  * @date: 2022/3/18  17:30
  */
 public class CustomerFallBack {
-    public static CommonResult fallBack1(Throwable throwable) {
+    public static CommonResult fallBack1(@PathVariable Long id, Throwable throwable) {
         return new CommonResult(444, "按客戶自定义,global fallback----1");
     }
 
-    public static CommonResult fallBack2(Throwable throwable) {
+    public static CommonResult fallBack2(@PathVariable Long id, Throwable throwable) {
         return new CommonResult(444, "按客戶自定义,global fallback----2");
     }
 }
 ```
 
-再用sentinel限制一下byValue1
+再用sentinel限制一下byValueFallback
 
- <img src="img(SpringCloud Alibaba)/image-20220318175536087.png" alt="image-20220318175536087" style="zoom:80%;" />
+ <img src="img(SpringCloud Alibaba)/image-20220319135710885.png" alt="image-20220319135710885" style="zoom:80%;" />
 
-可以看到一直刷新 /byValue1 ，正确的页面和BlockException兜底的页面交替出现
+可以看到一直刷新 /byValue/fallback/1 ，正确的页面和BlockException兜底的页面交替出现
 
-而一直刷新 /byValue2 ，就一直是fallback兜底的方法页面（因为里面除0了，直接报错）
+而一直刷新 /byValue/fallback/4或/byValue/fallback/5 ，就是fallback兜底的方法页面和lockException兜底的页面交替出现
 
 Sentinel主要有三个核心Api：
 
 1. SphU定义资源
 2. Tracer定义统计
 3. ContextUtil定义了上下文
+
+## Sentinel集成Ribbon和OpenFeign的服务熔断
+
+集成Ribbon没什么好说的，就在消费方直接写就行（因为Nacos已经包含了Ribbon）
+
+集成OpenFeign就要**引入OpenFeign的坐标以及yaml里激活Sentinel对Feign的支持**，其他的照旧（这里复习一下OpenFeign远程调用时的服务降级FeignFallback）
+
+```xml
+<!--SpringCloud openfeign -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-openfeign</artifactId>
+</dependency>
+```
+
+```yaml
+# 激活Sentinel对Feign的支持
+feign:
+  sentinel:
+    enabled: true
+```
+
+**熔断框架比较**
+
+|                |                          Sentinel                          |        Hystrix         |           resilience4j           |
+| :------------: | :--------------------------------------------------------: | :--------------------: | :------------------------------: |
+|    隔离策略    |                信号量隔离（并发线程数限流）                | 线程池隔商/信号量隔离  |            信号量隔离            |
+|  熔断降级策略  |               基于响应时间、异常比率、异常数               |      基于异常比率      |      基于异常比率、响应时间      |
+|  实时统计实现  |                   滑动窗口（LeapArray）                    | 滑动窗口（基于RxJava） |         Ring Bit Buffer          |
+|  动态规则配置  |                       支持多种数据源                       |     支持多种数据源     |             有限支持             |
+|     扩展性     |                         多个扩展点                         |       插件的形式       |            接口的形式            |
+| 基于注解的支持 |                            支持                            |          支持          |               支持               |
+|      限流      |              基于QPS，支持基于调用关系的限流               |       有限的支持       |           Rate Limiter           |
+|    流量整形    |            支持预热模式匀速器模式、预热排队模式            |         不支持         |      简单的Rate Limiter模式      |
+| 系统自适应保护 |                            支持                            |         不支持         |              不支持              |
+|     控制台     | 提供开箱即用的控制台，可配置规则、查看秒级监控，机器发观等 |     简单的监控查看     | 不提供控制台，可对接其它监控系统 |
+
+## Sentinel配置持久化
+
+一旦我们重启应用，sentinel规则将消失，生产环境需要将配置规则进行持久化。
+
+将限流配置规则持久化进Nacos保存，只要刷新8401某个rest地址，sentinel控制台的流控规则就能看到，只要Nacos里面的配置不删除，针对8401上sentinel上的流控规则持续有效。
+
+比如将8401的sentinel规则进行持久化
+
+pom
+
+```xml
+<!--SpringCloud ailibaba sentinel-datasource-nacos sentinel规则持久化用到-->
+<dependency>
+    <groupId>com.alibaba.csp</groupId>
+    <artifactId>sentinel-datasource-nacos</artifactId>
+</dependency>
+```
+
+yaml
+
+```yaml
+...
+
+spring:
+  application:
+    name: cloudalibaba-sentinel-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+        port: 8719  #默认8719，假如被占用了会自动从8719开始依次+1扫描。直至找到未被占用的端口
+      datasource: #添加Nacos数据源配置
+        ds1:
+          nacos:
+            server-addr: localhost:8848
+            dataId: cloudalibaba-sentinel-service
+            groupId: DEFAULT_GROUP
+            data-type: json
+            rule-type: flow
+            
+...            
+```
+
+解析：
+
+```yaml
+spring:
+  cloud:
+    sentinel:
+      datasource: #添加Nacos数据源配置
+        ds1:
+          nacos:
+            server-addr: nacos的IP端口号
+            dataId: ${spring.application.name}
+            groupId: DEFAULT_GROUP
+            data-type: json
+            rule-type: flow
+```
+
+nacos新建配置
+
+<img src="img(SpringCloud Alibaba)/image-20220319150729526.png" alt="image-20220319150729526" style="zoom:80%;" />
+
+注意到这里是按照资源名来进行配置的，当然可以配置多个
+
+```json
+[
+    {
+        "resource": "/retaLimit/byUrl",
+        "limitApp": "default",
+        "grade":   1,
+        "count":   1,
+        "strategy": 0,
+        "controlBehavior": 0,
+        "clusterMode": false    
+    }
+]
+```
+
+- resource：资源名称；
+- limitApp：来源应用；
+- grade：阈值类型，0表示线程数, 1表示QPS；
+- count：单机阈值；
+- strategy：流控模式，0表示直接，1表示关联，2表示链路；
+- controlBehavior：流控效果，0表示快速失败，1表示Warm Up，2表示排队等待；
+- clusterMode：是否集群。
+
+这样一来用Nacos发布了配置就可以对Sentinel配置进行持久化（当然前提得是nacos已经配置了外部数据库持久化），无论是你的8401宕机还是sentine宕机都不会丢失原来的sentinel配置
+
+# SpringCloud Alibaba Seata处理分布式事务
+
+## 分布式事务问题由来
+
+单体应用被拆分成微服务应用，原来的三个模块被拆分成三个独立的应用,分别使用三个独立的数据源，业务操作需要调用三三 个服务来完成。此时**每个服务内部的数据一致性由本地事务来保证， 但是全局的数据一致性问题没法保证**。
+
+**比如**：用户购买商品的业务逻辑。整个业务逻辑由3个微服务提供支持：
+
+- 仓储服务：对给定的商品扣除仓储数量。
+- 订单服务：根据采购需求创建订单。
+- 帐户服务：从用户帐户中扣除余额。
+
+<img src="img(SpringCloud Alibaba)/architecture.png" alt="Architecture" style="zoom:80%;" />
+
+一句话：**一次业务操作需要跨多个数据源或需要跨多个系统进行远程调用，就会产生分布式事务问题**。
+
+## Seata术语
+
+Seata 是一款开源的分布式事务解决方案，致力于提供高性能和简单易用的分布式事务服务。Seata 将为用户提供了 AT、TCC、SAGA 和 XA 事务模式，为用户打造一站式的分布式解决方案。
+
+**Seata模型**：一个典型的分布式事务过程，分为分布式事务处理过程的一ID+三组件模型
+
+- Transaction ID XID 全局唯一的事务ID
+- 三组件概念
+  - **TC (Transaction Coordinator) - 事务协调者**：维护全局和分支事务的状态，驱动全局事务提交或回滚。
+  - **TM (Transaction Manager) - 事务管理器**：定义全局事务的范围：开始全局事务、提交或回滚全局事务。
+  - **RM (Resource Manager) - 资源管理器**：管理分支事务处理的资源，与TC交谈以注册分支事务和报告分支事务的状态，并驱动分支事务提交或回滚。
+
+<img src="img(SpringCloud Alibaba)/145942191-7a2d469f-94c8-4cd2-8c7e-46ad75683636.png" alt="image" style="zoom:80%;" />
+
+**处理过程**：
+
+1. TM向TC申请开启一个全局事务，全局事务创建成功并生成一个全局唯一的XID；
+2. XID在微服务调用链路的上下文中传播；
+3. RM向TC注册分支事务，将其纳入XID对应全局事务的管辖；
+4. TM向TC发起针对XID的全局提交或回滚决议；
+5. TC调度XID下管辖的全部分支事务完成提交或回滚请求。
+
+ <img src="img(SpringCloud Alibaba)/2d2c6aa29c3158413f66d4ef8c1000dc.png" alt="img" style="zoom:80%;" />
+
+## Seata-Server安装配置
+
+[Seata GitHub官网](https://github.com/seata/seata/releases)
+
+下载解压
+
+**Seata配置**
+
+主要修改：自定义事务组名称+事务日志存储模式为db +数据库连接信息
+
+**修改seata的conf目录下的file.conf配置文件（记得备份）**
+
+service模块
+
+<img src="img(SpringCloud Alibaba)/image-20220320162429806.png" alt="image-20220320162429806" style="zoom:80%;" />
+
+store模块
+
+<img src="img(SpringCloud Alibaba)/image-20220320162652140.png" alt="image-20220320162652140" style="zoom:80%;" />
+
+**修改seata\conf目录下的registry.conf配置文件**
+
+ <img src="img(SpringCloud Alibaba)/image-20220320162917780.png" alt="image-20220320162917780" style="zoom:80%;" />
+
+**新建Seata数据库（跟上面配置的数据库名称一样，这里就叫seata），并在数据库里建表，建表的sql在seata\conf目录里面叫db_store.sql的文件**
+
+```sql
+-- the table to store GlobalSession data
+drop table if exists `global_table`;
+create table `global_table` (
+  `xid` varchar(128)  not null,
+  `transaction_id` bigint,
+  `status` tinyint not null,
+  `application_id` varchar(32),
+  `transaction_service_group` varchar(32),
+  `transaction_name` varchar(128),
+  `timeout` int,
+  `begin_time` bigint,
+  `application_data` varchar(2000),
+  `gmt_create` datetime,
+  `gmt_modified` datetime,
+  primary key (`xid`),
+  key `idx_gmt_modified_status` (`gmt_modified`, `status`),
+  key `idx_transaction_id` (`transaction_id`)
+);
+
+-- the table to store BranchSession data
+drop table if exists `branch_table`;
+create table `branch_table` (
+  `branch_id` bigint not null,
+  `xid` varchar(128) not null,
+  `transaction_id` bigint ,
+  `resource_group_id` varchar(32),
+  `resource_id` varchar(256) ,
+  `lock_key` varchar(128) ,
+  `branch_type` varchar(8) ,
+  `status` tinyint,
+  `client_id` varchar(64),
+  `application_data` varchar(2000),
+  `gmt_create` datetime,
+  `gmt_modified` datetime,
+  primary key (`branch_id`),
+  key `idx_xid` (`xid`)
+);
+
+-- the table to store lock data
+drop table if exists `lock_table`;
+create table `lock_table` (
+  `row_key` varchar(128) not null,
+  `xid` varchar(96),
+  `transaction_id` long ,
+  `branch_id` long,
+  `resource_id` varchar(256) ,
+  `table_name` varchar(32) ,
+  `pk` varchar(36) ,
+  `gmt_create` datetime ,
+  `gmt_modified` datetime,
+  primary key(`row_key`)
+);
+```
+
+ <img src="img(SpringCloud Alibaba)/image-20220320163319809.png" alt="image-20220320163319809" style="zoom:80%;" />
+
+**在每个业务的数据库里也都要创建回滚日志表，对应的sql在seata\conf目录里面叫db_ undo_ log.sql的文件**
+
+```sql
+-- the table to store seata xid data
+-- 0.7.0+ add context
+-- you must to init this sql for you business databese. the seata server not need it.
+-- 此脚本必须初始化在你当前的业务数据库中，用于AT 模式XID记录。与server端无关（注：业务数据库）
+-- 注意此处0.3.0+ 增加唯一索引 ux_undo_log
+drop table `undo_log`;
+CREATE TABLE `undo_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `branch_id` bigint(20) NOT NULL,
+  `xid` varchar(100) NOT NULL,
+  `context` varchar(128) NOT NULL,
+  `rollback_info` longblob NOT NULL,
+  `log_status` int(11) NOT NULL,
+  `log_created` datetime NOT NULL,
+  `log_modified` datetime NOT NULL,
+  `ext` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_undo_log` (`xid`,`branch_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
+```
+
+先启动Nacos再启动Seata
 
