@@ -1918,3 +1918,595 @@ CREATE TABLE `undo_log` (
 
 先启动Nacos再启动Seata
 
+## Seata应用实例
+
+seata用起来其实很简单，下面主要就通过上面官方提到的一个 订单->库存->账户 的实例来看一下Seata的应用，再从中学习一下seata的原理
+
+**Order模块**
+
+pom
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>SpringCloud</artifactId>
+        <groupId>com.eagle.springcloud</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>seata-order-service2001</artifactId>
+
+    <dependencies>
+        <!--nacos-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!--seata-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+            <exclusions>
+                <exclusion>
+                    <artifactId>seata-all</artifactId>
+                    <groupId>io.seata</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.seata</groupId>
+            <artifactId>seata-all</artifactId>
+            <version>0.9.0</version>
+        </dependency>
+        <!--feign-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <!--web-actuator-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--mysql-druid-->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>5.1.47</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>druid-spring-boot-starter</artifactId>
+            <version>1.1.10</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>2.1.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+yaml
+
+```yaml
+server:
+  port: 2001
+
+spring:
+  application:
+    name: seata-order-service
+  cloud:
+    alibaba:
+      seata:
+        #自定义事务组名称需要与seata-server中的对应
+        tx-service-group: seata_tx_group
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+  datasource:
+    driver-class-name: com.mysql.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/seata_order
+    username: root
+    password: root
+
+feign:
+  hystrix:
+    enabled: false
+
+logging:
+  level:
+    io:
+      seata: info
+
+mybatis:
+  mapperLocations: classpath:mapper/*.xml
+```
+
+要使用seata，还要在resource目录下引入所使用seata的conf目录下的 file.conf 和 registry.conf 文件
+
+ <img src="img(SpringCloud Alibaba)/image-20220321213519758.png" alt="image-20220321213519758" style="zoom:80%;" />
+
+实体类
+
+```java
+package com.eagle.springcloudalibaba.domain;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+/**
+ * @ClassName: Order
+ * @author: Maybe
+ * @date: 2022/3/20  20:39
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Order {
+    private Long id;
+
+    private Long userId;
+
+    private Long productId;
+
+    private Integer count;
+
+    private BigDecimal money;
+
+    private Integer status; //订单状态：0：创建中；1：已完结
+}
+```
+
+```java
+package com.eagle.springcloudalibaba.domain;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * @ClassName: CommonResult
+ * @author: Maybe
+ * @date: 2022/3/20  20:38
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+/**
+ * 给前端传的模板类
+ */
+public class CommonResult<T> {
+    private Integer code;
+    private String message;
+    private T data;
+
+    public CommonResult(Integer code, String message) {
+        this(code, message, null);
+    }
+}
+```
+
+OrderDao
+
+```java
+package com.eagle.springcloudalibaba.dao;
+
+import com.eagle.springcloudalibaba.domain.Order;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+/**
+ * @ClassName: OrderDao
+ * @author: Maybe
+ * @date: 2022/3/20  21:28
+ */
+@Mapper
+public interface OrderDao {
+    //创建订单
+    void create(Order order);
+
+    //修改订单状态，从零改为1
+    void updateStatus(@Param("userId") Long userId,@Param("status") Integer status);
+
+}
+```
+
+resources文件夹下新建mapper文件夹，添加orderMapper.xml
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+
+<mapper namespace="com.eagle.springcloudalibaba.dao.OrderDao">
+
+    <resultMap id="OrderBaseResultMap" type="com.eagle.springcloudalibaba.domain.Order">
+        <id property="id" column="id" jdbcType="BIGINT"/>
+        <result property="userId" column="user_id" jdbcType="BIGINT"/>
+        <result property="productId" column="product_id" jdbcType="BIGINT"/>
+        <result property="count" column="count" jdbcType="Integer"/>
+        <result property="money" column="money" jdbcType="DECIMAL"/>
+        <result property="status" column="status" jdbcType="Integer"/>
+    </resultMap>
+
+    <insert id="create">
+        insert into t_order (id,user_id,product_id,count,money,status)
+        values (null,#{userId},#{productId},#{count},#{money},0);
+    </insert>
+
+    <update id="updateStatus">
+        update t_order set satus=1
+        where user_id=#{userId} and status=#{status};
+    </update>
+
+</mapper>
+```
+
+Service接口：这里使用的是Feign，所以要写一下其他要调用的服务的Feign接口
+
+```java
+package com.eagle.springcloudalibaba.service;
+
+import com.eagle.springcloudalibaba.domain.Order;
+
+/**
+ * @ClassName: OrderService
+ * @author: Maybe
+ * @date: 2022/3/20  21:46
+ */
+public interface OrderService {
+    void create(Order order);
+}
+```
+
+```java
+package com.eagle.springcloudalibaba.service.impl;
+
+import com.eagle.springcloudalibaba.dao.OrderDao;
+import com.eagle.springcloudalibaba.domain.Order;
+import com.eagle.springcloudalibaba.service.AccountService;
+import com.eagle.springcloudalibaba.service.OrderService;
+import com.eagle.springcloudalibaba.service.StorageService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import javax.annotation.Resource;
+
+/**
+ * @ClassName: OrderServiceImpl
+ * @author: Maybe
+ * @date: 2022/3/20  21:46
+ */
+@Service
+@Slf4j
+public class OrderServiceImpl implements OrderService {
+    @Resource
+    private OrderDao orderDao;
+    @Resource
+    private StorageService storageService;
+    @Resource
+    private AccountService accountService;
+
+    /**
+     * todo
+     * 创建订单->调用库存服务扣减库存->调用账户服务扣减账户余额->修改订单状态
+     * 简单说：下订单->扣库存->减余额->改状态
+     *
+     * @param order
+     */
+    @Override
+    public void create(Order order) {
+        log.info("----->开始新建订单");
+        //1 新建订单
+        orderDao.create(order);
+
+        //2 扣减库存
+        log.info("----->订单微服务开始调用库存，做扣减Count");
+        storageService.decrease(order.getProductId(), order.getCount());
+        log.info("----->订单微服务开始调用库存，做扣减end");
+
+        //3 扣减账户
+        log.info("----->订单微服务开始调用账户，做扣减Money");
+        accountService.decrease(order.getUserId(), order.getMoney());
+        log.info("----->订单微服务开始调用账户，做扣减end");
+
+        //4 修改订单状态，从零到1,1代表已经完成
+        log.info("----->修改订单状态开始");
+        orderDao.updateStatus(order.getUserId(), 0);
+        log.info("----->修改订单状态结束");
+
+        log.info("----->下订单结束了，O(∩_∩)O哈哈~");
+    }
+}
+```
+
+Feign接口
+
+```java
+package com.eagle.springcloudalibaba.service;
+
+import com.eagle.springcloudalibaba.domain.CommonResult;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.math.BigDecimal;
+
+/**
+ * @ClassName: AccountService
+ * @author: Maybe
+ * @date: 2022/3/20  21:46
+ */
+@FeignClient(value = "seata-account-service")
+public interface AccountService {
+    @PostMapping(value = "/account/decrease")
+    CommonResult decrease(@RequestParam("userId") Long userId, @RequestParam("money") BigDecimal money);
+
+}
+```
+
+```java
+package com.eagle.springcloudalibaba.service;
+
+import com.eagle.springcloudalibaba.domain.CommonResult;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+/**
+ * @ClassName: StorageService
+ * @author: Maybe
+ * @date: 2022/3/20  21:45
+ */
+@FeignClient(value = "seata-storage-service")
+public interface StorageService {
+    @PostMapping(value = "/storage/decrease")
+    CommonResult decrease(@RequestParam("productId") Long productId, @RequestParam("count") Integer count);
+
+}
+```
+
+Controller
+
+```java
+package com.eagle.springcloudalibaba.controller;
+
+import com.eagle.springcloudalibaba.domain.CommonResult;
+import com.eagle.springcloudalibaba.domain.Order;
+import com.eagle.springcloudalibaba.service.OrderService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.annotation.Resource;
+
+/**
+ * @ClassName: OrderController
+ * @author: Maybe
+ * @date: 2022/3/21  16:28
+ */
+@RestController
+@Slf4j
+public class OrderController {
+    @Resource
+    private OrderService orderService;
+
+    @GetMapping("/order/create")
+    public CommonResult create(Order order) {
+        orderService.create(order);
+        return new CommonResult(200, "创建订单成功");
+    }
+}
+```
+
+config配置
+
+MyBatisConfig
+
+```java
+package com.eagle.springcloudalibaba.config;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * @ClassName: MyBatisConfig
+ * @author: Maybe
+ * @date: 2022/3/21  16:32
+ */
+@Configuration
+@MapperScan({"com.eagle.springcloudalibaba.dao"})
+public class MyBatisConfig {
+}
+```
+
+DataSourceProxyConfig，这里在导 DataSourceProxy 时注意要导 io.seata 的包
+
+```java
+package com.eagle.springcloudalibaba.config;
+
+import com.alibaba.druid.pool.DruidDataSource;
+import io.seata.rm.datasource.DataSourceProxy;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.transaction.SpringManagedTransactionFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+
+import javax.sql.DataSource;
+
+/**
+ * @ClassName: DataSourceProxyConfig
+ * @author: Maybe
+ * @date: 2022/3/21  16:52
+ */
+
+/**
+ * 使用Seata对数据源进行代理
+ * 在主启动上取消数据源的自动创建，而是使用自己定义的
+ */
+@Configuration
+public class DataSourceProxyConfig {
+    @Value("${mybatis.mapperLocations}")
+    private String mapperLocations;
+
+    @Bean
+    @ConfigurationProperties(prefix = "spring.datasource")
+    public DataSource druidDataSource() {
+        return new DruidDataSource();
+    }
+
+    @Bean
+    public DataSourceProxy dataSourceProxy(DataSource dataSource) {
+        return new DataSourceProxy(dataSource);
+    }
+
+    @Bean
+    public SqlSessionFactory sqlSessionFactoryBean(DataSourceProxy dataSourceProxy) throws Exception {
+        SqlSessionFactoryBean sqlSessionFactoryBean = new SqlSessionFactoryBean();
+        sqlSessionFactoryBean.setDataSource(dataSourceProxy);
+        sqlSessionFactoryBean.setMapperLocations(new PathMatchingResourcePatternResolver().getResources(mapperLocations));
+        sqlSessionFactoryBean.setTransactionFactory(new SpringManagedTransactionFactory());
+        return sqlSessionFactoryBean.getObject();
+    }
+}
+```
+
+主启动
+
+```java
+package com.eagle.springcloudalibaba;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
+/**
+ * @ClassName: SeataOrderMainApp2001
+ * @author: Maybe
+ * @date: 2022/3/21  16:59
+ */
+@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)//取消数据源的自动创建，而是使用自己定义的
+@EnableDiscoveryClient
+@EnableFeignClients
+public class SeataOrderMainApp2001 {
+    public static void main(String[] args) {
+        SpringApplication.run(SeataOrderMainApp2001.class, args);
+    }
+}
+```
+
+下面的 Storage 微服务模块和 Account 微服务模块都差不多
+
+## @GlobalTransactional
+
+下订单 -> 减库存 -> 扣余额 -> 改（订单）状态
+
+数据库初始情况：
+
+ <img src="img(SpringCloud Alibaba)/e639c859e870eebd847d579347ed8755.png" alt="img" style="zoom:80%;" />
+
+正常下单 - http://localhost:2001/order/create?userId=1&productId=1&count=10&money=100
+
+数据库正常下单后状况：
+
+ <img src="img(SpringCloud Alibaba)/32401b689cf9a7d624fd0f2aea7ce414.png" alt="img" style="zoom:80%;" />
+
+---
+
+**超时异常，没加@GlobalTransactional**
+
+模拟AccountServiceImpl添加超时
+
+```java
+@Service
+public class AccountServiceImpl implements AccountService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AccountServiceImpl.class);
+
+    @Resource
+    AccountDao accountDao;
+
+    /**
+     * 扣减账户余额
+     */
+    @Override
+    public void decrease(Long userId, BigDecimal money) {
+        LOGGER.info("------->account-service中扣减账户余额开始");
+        //模拟超时异常，全局事务回滚
+        //暂停几秒钟线程
+        try { TimeUnit.SECONDS.sleep(20); } catch (InterruptedException e) { e.printStackTrace(); }
+        accountDao.decrease(userId,money);
+        LOGGER.info("------->account-service中扣减账户余额结束");
+    }
+}
+```
+
+OpenFeign的调用默认时间是1s以内，所以最后会抛异常。
+
+数据库情况：
+
+ <img src="img(SpringCloud Alibaba)/af40cc3756cef7179e58c813ed404db3.png" alt="img" style="zoom:80%;" />
+
+**故障情况**
+
+- 当库存和账户金额扣减后，订单状态并没有设置为已经完成，没有从零改为1
+- 而且由于feign的重试机制，账户余额还有可能被多次扣减
+
+---
+
+**超时异常，加了@GlobalTransactional**
+
+用@GlobalTransactional标注OrderServiceImpl的create()方法。
+
+```java
+@Service
+@Slf4j
+public class OrderServiceImpl implements OrderService {
+    
+    ...
+
+    /**
+     * 创建订单->调用库存服务扣减库存->调用账户服务扣减账户余额->修改订单状态
+     * 简单说：下订单->扣库存->减余额->改状态
+     */
+    @Override
+    //rollbackFor = Exception.class表示对任意异常都进行回滚
+    @GlobalTransactional(name = "seata-create-order",rollbackFor = Exception.class)
+    public void create(Order order)
+    {
+		...
+    }
+}
+```
+
+还是模拟AccountServiceImpl添加超时，下单后数据库数据并没有任何改变，记录都添加不进来，**达到出异常，数据库回滚的效果**。
+
