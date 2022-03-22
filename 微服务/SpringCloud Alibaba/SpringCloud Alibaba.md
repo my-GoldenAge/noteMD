@@ -1789,7 +1789,7 @@ nacos新建配置
 
 Seata 是一款开源的分布式事务解决方案，致力于提供高性能和简单易用的分布式事务服务。Seata 将为用户提供了 AT、TCC、SAGA 和 XA 事务模式，为用户打造一站式的分布式解决方案。
 
-**Seata模型**：一个典型的分布式事务过程，分为分布式事务处理过程的一ID+三组件模型
+**Seata模型**：一个典型的分布式事务过程，分为<u>分布式事务处理过程的一ID+三组件模型</u>
 
 - Transaction ID XID 全局唯一的事务ID
 - 三组件概念
@@ -2509,4 +2509,174 @@ public class OrderServiceImpl implements OrderService {
 ```
 
 还是模拟AccountServiceImpl添加超时，下单后数据库数据并没有任何改变，记录都添加不进来，**达到出异常，数据库回滚的效果**。
+
+## Seata工作原理
+
+以一个示例来说明整个 AT 分支的工作过程。
+
+业务表：`product`
+
+| Field |     Type     | Key  |
+| :---: | :----------: | :--: |
+|  id   |  bigint(20)  | PRI  |
+| name  | varchar(100) |      |
+| since | varchar(100) |      |
+
+AT 分支事务的业务逻辑：
+
+```sql
+update product set name = 'GTS' where name = 'TXC';
+```
+
+### 一阶段
+
+---
+
+过程：
+
+1. 解析 SQL：得到 SQL 的类型（UPDATE），表（product），条件（where name = 'TXC'）等相关的信息。
+2. 查询前镜像：根据解析得到的条件信息，生成查询语句，定位数据。
+
+```sql
+select id, name, since from product where name = 'TXC';
+```
+
+得到前镜像：
+
+|  id  | name | since |
+| :--: | :--: | :---: |
+|  1   | TXC  | 2014  |
+
+3. 执行业务 SQL：更新这条记录的 name 为 'GTS'。
+4. 查询后镜像：根据前镜像的结果，通过 **主键** 定位数据。
+
+```sql
+select id, name, since from product where id = 1;
+```
+
+得到后镜像：
+
+|  id  | name | since |
+| :--: | :--: | :---: |
+|  1   | GTS  | 2014  |
+
+5. 插入回滚日志：把前后镜像数据以及业务 SQL 相关的信息组成一条回滚日志记录，插入到 `UNDO_LOG` 表中。
+
+```json
+{
+	"branchId": 641789253,
+	"undoItems": [{
+		"afterImage": {
+			"rows": [{
+				"fields": [{
+					"name": "id",
+					"type": 4,
+					"value": 1
+				}, {
+					"name": "name",
+					"type": 12,
+					"value": "GTS"
+				}, {
+					"name": "since",
+					"type": 12,
+					"value": "2014"
+				}]
+			}],
+			"tableName": "product"
+		},
+		"beforeImage": {
+			"rows": [{
+				"fields": [{
+					"name": "id",
+					"type": 4,
+					"value": 1
+				}, {
+					"name": "name",
+					"type": 12,
+					"value": "TXC"
+				}, {
+					"name": "since",
+					"type": 12,
+					"value": "2014"
+				}]
+			}],
+			"tableName": "product"
+		},
+		"sqlType": "UPDATE"
+	}],
+	"xid": "xid:xxx"
+}
+```
+
+6. 提交前，向 TC 注册分支：申请 `product` 表中，主键值等于 1 的记录的 **全局锁** 。
+7. 本地事务提交：业务数据的更新和前面步骤中生成的 UNDO LOG 一并提交。
+8. 将本地事务提交的结果上报给 TC。
+
+ <img src="img(SpringCloud Alibaba)/image-20220322144337165.png" alt="image-20220322144337165" style="zoom:80%;" />
+
+### 二阶段-回滚
+
+---
+
+1. 收到 TC 的分支回滚请求，开启一个本地事务，执行如下操作。
+2. 通过 XID 和 Branch ID 查找到相应的 UNDO LOG 记录。
+3. 数据校验：拿 UNDO LOG 中的后镜与当前数据进行比较，如果有不同，说明数据被当前全局事务之外的动作做了修改。这种情况，需要根据配置策略来做处理，详细的说明在另外的文档中介绍。
+4. 根据 UNDO LOG 中的前镜像和业务 SQL 的相关信息生成并执行回滚的语句：
+
+```sql
+update product set name = 'TXC' where id = 1;
+```
+
+5. 提交本地事务。并把本地事务的执行结果（即分支事务回滚的结果）上报给 TC。
+
+**注意**：在还原前要首先要校验脏写，对比“数据库当前业务数据”和"after image"。如果两份数据完全一致就说明没有脏写， 可以还原业务数据，如果不一致就说明有脏写, 出现脏写就需要转人工处理。
+
+ <img src="img(SpringCloud Alibaba)/image-20220322144400633.png" alt="image-20220322144400633" style="zoom: 67%;" />
+
+### 二阶段-提交
+
+---
+
+1. 收到 TC 的分支提交请求，把请求放入一个异步任务的队列中，马上返回提交成功的结果给 TC。
+2. **异步任务阶段的分支提交请求将异步和批量地删除相应 UNDO LOG 记录。**
+
+ <img src="img(SpringCloud Alibaba)/image-20220322144640150.png" alt="image-20220322144640150" style="zoom:80%;" />
+
+### 回滚日志表
+
+---
+
+UNDO_LOG Table：不同数据库在类型上会略有差别。
+
+以 MySQL 为例：
+
+|     Field     |     Type     |
+| :-----------: | :----------: |
+|   branch_id   |  bigint PK   |
+|      xid      | varchar(100) |
+|    context    | varchar(128) |
+| rollback_info |   longblob   |
+|  log_status   |   tinyint    |
+|  log_created  |   datetime   |
+| log_modified  |   datetime   |
+
+```sql
+-- 注意此处0.7.0+ 增加字段 context
+CREATE TABLE `undo_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `branch_id` bigint(20) NOT NULL,
+  `xid` varchar(100) NOT NULL,
+  `context` varchar(128) NOT NULL,
+  `rollback_info` longblob NOT NULL,
+  `log_status` int(11) NOT NULL,
+  `log_created` datetime NOT NULL,
+  `log_modified` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_undo_log` (`xid`,`branch_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
+```
+
+
+
+<img src="img(SpringCloud Alibaba)/seata原理流程图.jpg" alt="seata原理流程图" style="zoom:80%;" />
 
