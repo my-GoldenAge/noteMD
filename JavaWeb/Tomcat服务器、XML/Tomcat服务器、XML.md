@@ -22,7 +22,7 @@ Tomcat 默认的端口号是：8080
 
 找到 Tomcat 目录下的 conf 目录，找到 server.xml 配置文件。 
 
-<img src="Tomcat服务器、XML.assets/image-20210816173717069.png" alt="image-20210816173717069" style="zoom:67%;" />
+ <img src="img(Tomcat服务器、XML)/image-20210816173717069.png" alt="image-20210816173717069" style="zoom:67%;" />
 
 平时上百度：[http://www.baidu.com:80](http://www.baidu.com:80) 
 
@@ -60,11 +60,11 @@ docBase 表示你的工程目录在哪里
 
 * 手托 html 页面的原理： 
 
-<img src="Tomcat服务器、XML.assets/image-20210816173747332.png" alt="image-20210816173747332" style="zoom:67%;" />
+ <img src="img(Tomcat服务器、XML)/image-20210816173747332.png" alt="image-20210816173747332" style="zoom:67%;" />
 
 * 输入访问地址访问的原因： 
 
-<img src="Tomcat服务器、XML.assets/image-20210816173810980.png" alt="image-20210816173810980" style="zoom:67%;" />
+ <img src="img(Tomcat服务器、XML)/image-20210816173810980.png" alt="image-20210816173810980" style="zoom:67%;" />
 
 ### ROOT 的工程的访问，以及 默认 index.html 页面的访问
 
@@ -80,7 +80,7 @@ docBase 表示你的工程目录在哪里
 
 ### web工程的目录介绍
 
-<img src="Tomcat服务器、XML.assets/image-20210812003125625.png" alt="image-20210812003125625" style="zoom:67%;" />
+<img src="img(Tomcat服务器、XML)/image-20210812003125625.png" alt="image-20210812003125625" style="zoom:67%;" />
 
 ### 在IDEA中部署工程到Tomcat上运行
 
@@ -91,11 +91,11 @@ docBase 表示你的工程目录在哪里
 
 ### 修改工程访问路径
 
-<img src="Tomcat服务器、XML.assets/image-20210816174153048.png" alt="image-20210816174153048" style="zoom: 80%;" />
+<img src="img(Tomcat服务器、XML)/image-20210816174153048.png" alt="image-20210816174153048" style="zoom: 80%;" />
 
 ### 修改运行端口号
 
-<img src="Tomcat服务器、XML.assets/image-20210816174222046.png" alt="image-20210816174222046" style="zoom:80%;" />
+<img src="img(Tomcat服务器、XML)/image-20210816174222046.png" alt="image-20210816174222046" style="zoom:80%;" />
 
 ### 配置热部署资源
 
